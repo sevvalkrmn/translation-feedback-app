@@ -10,7 +10,7 @@ Uygulama üç parçadan oluşur:
 2. Supabase PostgreSQL kalıcı veri ve iş kuyruğu
 3. Rig üzerinde çalışan Python worker
 
-Rig doğrudan internete açık HTTP API değildir. Web uygulaması model işlerini Supabase'e `queued` olarak yazar; worker işleri atomik olarak claim eder, mock LLM/XAI adapter'larıyla işler ve sonucu Supabase'e kaydeder.
+Rig doğrudan internete açık HTTP API değildir. Web uygulaması model işlerini Supabase'e `queued` olarak yazar; worker işleri atomik olarak claim eder, seçilen LLM ve XAI adapter'larıyla işler ve sonucu Supabase'e kaydeder.
 
 ## Proje Yolu
 
@@ -42,7 +42,8 @@ SUPABASE_URL=
 SUPABASE_SECRET_KEY=
 WORKER_ID=
 WORKER_POLL_INTERVAL_SECONDS=
-MODEL_PROVIDER=mock
+LLM_PROVIDER=mock
+XAI_PROVIDER=mock
 QWEN_MODEL_PATH=/media/ailab-rig/943b1761-0043-4605-b329-9f6c0e5a6402/models/Qwen3.8-27B
 ```
 
@@ -91,19 +92,21 @@ npm run build
 
 ## Worker Çalıştırma
 
-İlk aşamada yalnızca mock provider kullanılır:
+Varsayılan yapılandırmada iki adapter da mock kullanır:
 
 ```bash
 PYTHONPATH=. conda run -n qwen38 python -m worker.main
 ```
 
-Worker yalnızca `.env.worker.local` dosyasını okur. Bu dosya Git dışındadır ve worker'a özel `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `MODEL_PROVIDER=mock` değerlerini içermelidir.
+Worker yalnızca `.env.worker.local` dosyasını okur. Bu dosya Git dışındadır ve worker'a özel `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `LLM_PROVIDER`, `XAI_PROVIDER` değerlerini içermelidir. Eski `MODEL_PROVIDER=mock` yalnızca `LLM_PROVIDER` tanımlı değilse LLM için geriye uyumluluk sağlar.
+
+Gerçek LLM ile geçici test yapılandırması `LLM_PROVIDER=qwen`, `XAI_PROVIDER=mock` ve yerel `QWEN_MODEL_PATH` kullanır. Qwen, worker başlangıcında bir kez yüklenir; XAI bu aşamada mock kalır. `XAI_PROVIDER=xcomet` henüz uygulanmamıştır.
 
 Worker sıralı işler. Her turda:
 
 1. Supabase HTTPS RPC üzerinden `claim_next_model_job` fonksiyonuyla işi atomik claim eder.
 2. Supabase HTTPS RPC üzerinden yalnızca claim ettiği aktif işe ait task payload'ını okur.
-3. `llm_feedback` için `MockLLMAdapter`, `xai_feedback` için `MockXAIAdapter` çalıştırır.
+3. `llm_feedback` için seçilen mock veya Qwen LLM adapter'ını, `xai_feedback` için mock XAI adapter'ını çalıştırır.
 4. `complete_model_job` RPC'si ile sonucu kaydeder.
 5. Hata olursa `fail_model_job` RPC'si ile temiz kısa hata yazar.
 
@@ -131,14 +134,14 @@ PDF React PDF ile server tarafında üretilir. Türkçe karakterler için `publi
 
 ## Gerçek Qwen Entegrasyonu
 
-Bu aşamada gerçek model yüklenmez. Sonraki aşamada worker içine Qwen adapter'ı eklenirken mevcut çalışan test scriptindeki ayarlar korunmalıdır:
+`LLM_PROVIDER=qwen` seçildiğinde model worker başlangıcında yerel dosyalardan yüklenir. Adapter, doğrulanmış `test_qwen38.py` ayarlarını kullanır:
 
 - 4-bit NF4
 - `device_map="balanced"`
 - GPU başına `22GiB`
 - CPU `64GiB`
 - `enable_thinking=False`
-- Model worker başlangıcında yalnızca bir kez yüklenmeli
+- Model worker başlangıcında yalnızca bir kez yüklenir
 
 ## Güvenlik Notları
 

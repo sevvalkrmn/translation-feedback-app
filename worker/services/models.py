@@ -1,23 +1,27 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Severity = Literal["minor", "major", "critical"]
 
 
 class LLMFeedbackError(BaseModel):
-    target_span: str
-    category: str
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    target_span: str = Field(min_length=1)
+    category: str = Field(min_length=1)
     severity: Severity
-    explanation: str
-    hint: str
+    explanation: str = Field(min_length=1)
+    hint: str = Field(min_length=1)
 
 
 class LLMFeedbackResult(BaseModel):
-    summary: str
-    strengths: list[str]
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    summary: str = Field(min_length=1)
+    strengths: list[str] = Field(min_length=1)
     errors: list[LLMFeedbackError]
-    revision_guidance: list[str]
+    revision_guidance: list[str] = Field(min_length=1)
 
 
 class XAIError(BaseModel):
