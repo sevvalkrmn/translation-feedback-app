@@ -1,44 +1,33 @@
-import type { XAIError } from "@/types/feedback";
+import type { Severity, XaiEvidenceItem } from "@/types/feedback";
 
 export interface HighlightSegment {
   text: string;
-  severity?: XAIError["severity"];
-  error?: XAIError;
+  severity?: Severity;
 }
 
-export function validateXaiSpan(text: string, error: Pick<XAIError, "target_start" | "target_end" | "target_span">) {
-  if (error.target_start < 0 || error.target_end <= error.target_start || error.target_end > text.length) {
-    return false;
-  }
-  return text.slice(error.target_start, error.target_end) === error.target_span;
+export function validateXaiSpan(text: string, span: string) {
+  if (!span) return false;
+  const first = text.indexOf(span);
+  return first >= 0 && text.indexOf(span, first + 1) < 0;
 }
 
-export function buildHighlightSegments(text: string, errors: XAIError[]): HighlightSegment[] {
-  const validErrors = errors
-    .filter((error) => validateXaiSpan(text, error))
-    .sort((left, right) => left.target_start - right.target_start);
-
+export function buildHighlightSegments(text: string, evidence: XaiEvidenceItem[]): HighlightSegment[] {
+  const matches = evidence
+    .filter((item) => validateXaiSpan(text, item.translation_span))
+    .map((item) => ({
+      start: text.indexOf(item.translation_span),
+      end: text.indexOf(item.translation_span) + item.translation_span.length,
+      severity: item.severity
+    }))
+    .sort((left, right) => left.start - right.start);
   const segments: HighlightSegment[] = [];
   let cursor = 0;
-
-  for (const error of validErrors) {
-    if (error.target_start < cursor) {
-      continue;
-    }
-    if (error.target_start > cursor) {
-      segments.push({ text: text.slice(cursor, error.target_start) });
-    }
-    segments.push({
-      text: text.slice(error.target_start, error.target_end),
-      severity: error.severity,
-      error
-    });
-    cursor = error.target_end;
+  for (const match of matches) {
+    if (match.start < cursor) continue;
+    if (match.start > cursor) segments.push({ text: text.slice(cursor, match.start) });
+    segments.push({ text: text.slice(match.start, match.end), severity: match.severity });
+    cursor = match.end;
   }
-
-  if (cursor < text.length) {
-    segments.push({ text: text.slice(cursor) });
-  }
-
-  return segments.length > 0 ? segments : [{ text }];
+  if (cursor < text.length) segments.push({ text: text.slice(cursor) });
+  return segments.length ? segments : [{ text }];
 }

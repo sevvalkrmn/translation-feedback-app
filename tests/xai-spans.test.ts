@@ -1,30 +1,29 @@
 import { describe, expect, it } from "vitest";
 
 import { buildHighlightSegments, validateXaiSpan } from "@/lib/report/xai";
-import type { XAIError } from "@/types/feedback";
+import type { XaiEvidenceItem } from "@/types/feedback";
 
-const error: XAIError = {
-  target_span: "decided hardly",
-  target_start: 4,
-  target_end: 18,
-  source_span: "karar vermekte zorlandı",
-  severity: "major",
-  confidence: 0.87,
-  category: "word_choice",
-  explanation: "Hardly bu bağlama uymuyor.",
-  hint: "Have difficulty + V-ing yapısını inceleyin.",
-  detector_model: "mock-xai",
-  explainer_model: "mock-explainer"
+const item: XaiEvidenceItem = {
+  source_span: "karar vermekte", translation_span: "decided hardly",
+  severity: "major", category: "fluency", decision_explanation: "İfade doğal değil.",
+  student_hint: "Eylemi yeniden düşün.",
+  verification: { status: "verified", before_severity: "major", after_severity: null,
+    relevant_dimension: "grammar_fluency", score_delta: 10, no_new_major_error: true }
 };
 
 describe("xai spans", () => {
-  it("validates exact target spans", () => {
-    expect(validateXaiSpan("She decided hardly.", error)).toBe(true);
-    expect(validateXaiSpan("She decided differently.", error)).toBe(false);
+  it("highlights an exact span including Turkish and emoji context", () => {
+    const text = "🙂 She decided hardly. Çağrı";
+    expect(validateXaiSpan(text, item.translation_span)).toBe(true);
+    expect(buildHighlightSegments(text, [item]).some((part) => part.severity === "major")).toBe(true);
   });
 
-  it("builds colored highlight segments", () => {
-    const segments = buildHighlightSegments("She decided hardly.", [error]);
-    expect(segments.some((segment) => segment.severity === "major")).toBe(true);
+  it("falls back safely for missing, repeated and overlapping spans", () => {
+    expect(buildHighlightSegments("She decided differently.", [item])).toEqual([{ text: "She decided differently." }]);
+    expect(buildHighlightSegments("decided hardly decided hardly", [item])).toEqual([
+      { text: "decided hardly decided hardly" }
+    ]);
+    const overlap = { ...item, translation_span: "hardly" };
+    expect(buildHighlightSegments("She decided hardly.", [item, overlap]).filter((part) => part.severity)).toHaveLength(1);
   });
 });

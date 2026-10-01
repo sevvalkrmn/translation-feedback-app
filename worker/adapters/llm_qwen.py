@@ -5,7 +5,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from worker.services.models import LLMFeedbackResult
+from worker.services.feedback import normal_feedback, validate_evaluation
+from worker.services.models import CounterfactualCandidate, EvaluationError, LLMFeedbackResult, TranslationEvaluation
 
 
 class QwenLoadError(RuntimeError):
@@ -33,10 +34,10 @@ class QwenLLMAdapter:
 
         self.model_path = path
         self._torch, self._processor, self._model = self._load_runtime()
-        self._system_prompt = (
-            Path(__file__).resolve().parents[1] / "prompts" / "llm_feedback_system.txt"
-        ).read_text(encoding="utf-8")
-        self._schema = json.dumps(LLMFeedbackResult.model_json_schema(), ensure_ascii=False)
+        prompts = Path(__file__).resolve().parents[1] / "prompts"
+        self._evaluation_prompt = (prompts / "translation_evaluation_v1.txt").read_text(encoding="utf-8")
+        self._counterfactual_prompt = (prompts / "counterfactual_candidate_v1.txt").read_text(encoding="utf-8")
+        self._repair_prompt = (prompts / "json_repair_v1.txt").read_text(encoding="utf-8")
 
     def _load_runtime(self) -> tuple[Any, Any, Any]:
         try:
@@ -71,29 +72,56 @@ class QwenLLMAdapter:
             raise QwenLoadError("Qwen modeli yerel dosyalardan yüklenemedi.") from None
 
     def evaluate(self, source_text_tr: str, student_translation_en: str) -> LLMFeedbackResult:
+        return normal_feedback(self.evaluate_shared(source_text_tr, student_translation_en))
+
+    def evaluate_shared(self, source_text_tr: str, student_translation_en: str) -> TranslationEvaluation:
         payload = json.dumps(
             {"source_text_tr": source_text_tr, "student_translation_en": student_translation_en},
             ensure_ascii=False,
         )
         prompt = (
-            f"{self._system_prompt}\n\nJSON şeması:\n{self._schema}\n\n"
-            f"Değerlendirilecek veri:\n{payload}\n\n"
-            "Çıktı yalnızca bir JSON nesnesi olsun. target_span, öğrenci çevirisinin birebir alt dizgesi olsun."
+            f"{self._evaluation_prompt}\n\nJSON şeması:\n"
+            f"{json.dumps(TranslationEvaluation.model_json_schema(), ensure_ascii=False)}\n\n"
+            f"<student_data>\n{payload}\n</student_data>"
         )
-        first_output = self._generate(prompt)
+
+        def parse(output: str) -> TranslationEvaluation:
+            result = TranslationEvaluation.model_validate(self._parse_json(output))
+            validate_evaluation(result, source_text_tr, student_translation_en)
+            return result
+
+        return self._generate_validated(prompt, parse)
+
+    def generate_counterfactual(
+        self, source: str, translation: str, error: EvaluationError, alternative: bool = False
+    ) -> str:
+        payload = json.dumps({
+            "source_text_tr": source, "student_translation_en": translation,
+            "target_source_span": error.source_span,
+            "target_translation_span": error.translation_span,
+            "source_meaning": error.source_meaning,
+            "alternative": alternative,
+        }, ensure_ascii=False)
+        prompt = (
+            f"{self._counterfactual_prompt}\n\nJSON şeması:\n"
+            f"{json.dumps(CounterfactualCandidate.model_json_schema(), ensure_ascii=False)}\n\n"
+            f"<student_data>\n{payload}\n</student_data>"
+        )
+        return self._generate_validated(
+            prompt, lambda output: CounterfactualCandidate.model_validate(self._parse_json(output))
+        ).replacement_span
+
+    def _generate_validated(self, prompt: str, parser: Any) -> Any:
+        first = self._generate(prompt)
         try:
-            return self._parse(first_output, student_translation_en)
-        except QwenFeedbackError:
-            repair_prompt = (
-                f"{prompt}\n\nÖnceki cevap JSON şemasına veya target_span kuralına uymadı. "
-                "Yalnızca düzeltilmiş JSON nesnesini üret; açıklama veya Markdown ekleme.\n"
-                f"Önceki cevap:\n{first_output[:12000]}"
-            )
-            repaired_output = self._generate(repair_prompt)
+            return parser(first)
+        except (ValidationError, ValueError, TypeError):
+            repair = f"{self._repair_prompt}\n\n{prompt}\n\n<invalid_json>\n{first[:12000]}\n</invalid_json>"
+            second = self._generate(repair)
             try:
-                return self._parse(repaired_output, student_translation_en)
-            except QwenFeedbackError:
-                raise QwenFeedbackError("Qwen geri bildirimi iki denemede doğrulanamadı.") from None
+                return parser(second)
+            except (ValidationError, ValueError, TypeError):
+                raise QwenFeedbackError("Qwen JSON çıktısı iki denemede doğrulanamadı.") from None
 
     def _generate(self, prompt: str) -> str:
         messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
@@ -127,16 +155,12 @@ class QwenLLMAdapter:
             raise QwenInferenceError("Qwen inference başarısız oldu.") from None
 
     @staticmethod
-    def _parse(output: str, student_translation_en: str) -> LLMFeedbackResult:
+    def _parse_json(output: str) -> Any:
         clean = output.strip()
         fenced = re.fullmatch(r"```(?:json)?\s*\n(.*?)\n```", clean, flags=re.DOTALL | re.IGNORECASE)
         if fenced:
             clean = fenced.group(1).strip()
         try:
-            data = json.loads(clean)
-            result = LLMFeedbackResult.model_validate(data)
-            if any(error.target_span not in student_translation_en for error in result.errors):
-                raise ValueError("target_span mismatch")
-            return result
-        except (json.JSONDecodeError, ValidationError, ValueError, TypeError):
-            raise QwenFeedbackError("Qwen geri bildirimi geçerli JSON şemasında değil.") from None
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            raise ValueError("invalid JSON") from None

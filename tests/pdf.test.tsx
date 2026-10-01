@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import { describe, expect, it } from "vitest";
@@ -51,10 +52,15 @@ describe("PDF report", () => {
         created_at: now,
         raw_output: {},
         structured_output: {
+          method: "llm",
           summary: "Türkçe karakterler: ğüşİıöç",
-          strengths: ["Anlam korunmuş."],
           errors: [],
-          revision_guidance: ["Akıcılığı güçlendirin."]
+          evaluation: {
+            schema_version: "1.0", prompt_version: "translation-evaluation-v1",
+            model: "Qwen3.8-27B", language_pair: "tr-en", overall_score: 80,
+            dimension_scores: { meaning_accuracy: 80, completeness: 80, grammar_fluency: 80, terminology_register: 80 },
+            errors: [], summary: "Türkçe karakterler: ğüşİıöç"
+          }
         }
       },
       feedback2: {
@@ -65,14 +71,29 @@ describe("PDF report", () => {
         created_at: now,
         raw_output: {},
         structured_output: {
-          overall_score: 0.74,
+          method: "xai",
           summary: "İfade gözden geçirilmeli.",
-          errors: []
+          evidence_items: [],
+          evaluation: {
+            schema_version: "1.0", prompt_version: "translation-evaluation-v1",
+            model: "Qwen3.8-27B", language_pair: "tr-en", overall_score: 70,
+            dimension_scores: { meaning_accuracy: 70, completeness: 70, grammar_fluency: 70, terminology_register: 70 },
+            errors: [], summary: "İfade gözden geçirilmeli."
+          }
         }
       }
     };
 
     const buffer = await renderToBuffer(React.createElement(ReportDocument, { data }) as never);
     expect(buffer.byteLength).toBeGreaterThan(1000);
+    const extraction = spawnSync("pdftotext", ["-", "-"], { input: buffer });
+    if (!extraction.error) {
+      expect(extraction.status).toBe(0);
+      const text = extraction.stdout.toString("utf8");
+      expect(text).toContain("Bölüm A - Çeviri gelişimi");
+      expect(text).toContain("Bölüm B - Geri bildirim ayrıntıları");
+      expect(text.indexOf("Bölüm A")).toBeLessThan(text.indexOf("Bölüm B"));
+      expect(text).toContain("ğüşİıöç");
+    }
   });
 });

@@ -42,8 +42,26 @@ def test_xcomet_is_rejected_before_loading_qwen(monkeypatch):
     monkeypatch.setenv("XAI_PROVIDER", "xcomet")
     monkeypatch.setattr(runner, "QwenLLMAdapter", lambda path: pytest.fail("Qwen must not load"))
 
-    with pytest.raises(RuntimeError, match="henüz uygulanmadı"):
+    with pytest.raises(RuntimeError, match="qwen_counterfactual"):
         build_adapters()
+
+
+def test_two_qwen_providers_share_one_model(monkeypatch):
+    paths = []
+
+    class FakeQwen:
+        model_name = "Qwen3.8-27B"
+
+        def __init__(self, path):
+            paths.append(path)
+
+    monkeypatch.setenv("LLM_PROVIDER", "qwen")
+    monkeypatch.setenv("XAI_PROVIDER", "qwen_counterfactual")
+    monkeypatch.setenv("QWEN_MODEL_PATH", "/test/model")
+    monkeypatch.setattr(runner, "QwenLLMAdapter", FakeQwen)
+    llm, xai = build_adapters()
+    assert xai.engine is llm
+    assert paths == ["/test/model"]
 
 
 def test_process_once_claims_and_completes_job(monkeypatch):
@@ -137,3 +155,28 @@ def test_process_once_never_logs_student_text_or_secret(monkeypatch, capsys):
     for sensitive in [student_text, secret, "özel kaynak"]:
         assert sensitive not in output.out + output.err + " ".join(reported_errors)
     assert reported_errors == ["RuntimeError: feedback job failed"]
+
+
+def test_process_once_runs_mock_xai_through_rpc_contract(monkeypatch):
+    class FakeClientContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    saved = []
+    monkeypatch.setattr(runner, "get_worker_client", lambda: FakeClientContext())
+    monkeypatch.setattr(runner, "claim_next_job", lambda client, worker_id, lease_seconds: {
+        "id": "job-2", "job_type": "xai_feedback",
+    })
+    monkeypatch.setattr(runner, "get_task_for_job", lambda client, job_id, worker_id: {
+        "source_text": "Komite projeyi geçici olarak durdurmaya karar verdi.",
+        "initial_translation": "The committee decided to cancel the project.",
+    })
+    monkeypatch.setattr(runner, "complete_job", lambda *args: saved.append(args))
+
+    assert runner.process_once("worker-1", MockLLMAdapter(), MockXAIAdapter()) is True
+    assert saved[0][4]["method"] == "xai"
+    assert saved[0][4]["evidence_items"][0]["verification"]["status"] == "verified"
+    assert saved[0][5] == {"provider": "mock"}

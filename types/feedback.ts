@@ -10,39 +10,77 @@ export type SessionStatus = "active" | "completed";
 
 export type TranslationTaskStatus = "draft" | "submitted" | "feedback_ready" | "revised";
 
-export interface XAIError {
-  target_span: string;
-  target_start: number;
-  target_end: number;
+export type ErrorCategory =
+  | "meaning_shift" | "omission" | "addition" | "terminology"
+  | "grammar" | "fluency" | "register_style" | "cohesion";
+
+export interface EvaluationError {
+  id: string;
   source_span: string;
+  translation_span: string;
+  category: ErrorCategory;
   severity: Severity;
-  confidence: number;
-  category: string;
-  explanation: string;
-  hint: string;
-  detector_model: string;
-  explainer_model: string;
+  source_meaning: string;
+  detected_problem: string;
+  student_hint: string;
 }
 
-export interface XAIResult {
+export interface TranslationEvaluation {
+  schema_version: "1.0";
+  prompt_version: "translation-evaluation-v1";
+  model: "Qwen3.8-27B";
+  language_pair: "tr-en";
   overall_score: number;
+  dimension_scores: {
+    meaning_accuracy: number;
+    completeness: number;
+    grammar_fluency: number;
+    terminology_register: number;
+  };
+  errors: EvaluationError[];
   summary: string;
-  errors: XAIError[];
 }
 
 export interface LLMFeedbackError {
-  target_span: string;
-  category: string;
+  source_span: string;
+  translation_span: string;
+  category: ErrorCategory;
   severity: Severity;
   explanation: string;
   hint: string;
 }
 
 export interface LLMFeedbackResult {
+  method: "llm";
   summary: string;
-  strengths: string[];
   errors: LLMFeedbackError[];
-  revision_guidance: string[];
+  evaluation: TranslationEvaluation;
+}
+
+export interface XaiVerification {
+  status: "verified" | "inconclusive";
+  before_severity: Severity;
+  after_severity: Severity | null;
+  relevant_dimension: keyof TranslationEvaluation["dimension_scores"];
+  score_delta: number;
+  no_new_major_error: boolean;
+}
+
+export interface XaiEvidenceItem {
+  source_span: string;
+  translation_span: string;
+  category: ErrorCategory;
+  severity: Severity;
+  decision_explanation: string;
+  verification: XaiVerification;
+  student_hint: string;
+}
+
+export interface XAIResult {
+  method: "xai";
+  summary: string;
+  evidence_items: XaiEvidenceItem[];
+  evaluation: TranslationEvaluation;
 }
 
 export type StructuredFeedback = LLMFeedbackResult | XAIResult;

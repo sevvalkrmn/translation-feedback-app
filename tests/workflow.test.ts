@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canEditInitialTask, canOpenResult, canOpenTask, canSubmitRevision } from "@/lib/workflow/rules";
+import { canEditInitialTask, canOpenResult, canOpenTask, canSubmitRevision, methodForTask } from "@/lib/workflow/rules";
 import type { TranslationTask } from "@/types/feedback";
 
 function task(partial: Partial<TranslationTask>): TranslationTask {
@@ -21,6 +21,10 @@ function task(partial: Partial<TranslationTask>): TranslationTask {
 }
 
 describe("workflow rules", () => {
+  it("keeps the same LLM then XAI order for every session", () => {
+    expect(methodForTask(1)).toBe("llm");
+    expect(methodForTask(2)).toBe("xai");
+  });
   it("allows task 1 before anything else", () => {
     expect(canOpenTask(1, [])).toBe(true);
   });

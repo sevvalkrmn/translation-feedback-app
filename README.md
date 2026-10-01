@@ -100,13 +100,13 @@ PYTHONPATH=. conda run -n qwen38 python -m worker.main
 
 Worker yalnızca `.env.worker.local` dosyasını okur. Bu dosya Git dışındadır ve worker'a özel `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `LLM_PROVIDER`, `XAI_PROVIDER` değerlerini içermelidir. Eski `MODEL_PROVIDER=mock` yalnızca `LLM_PROVIDER` tanımlı değilse LLM için geriye uyumluluk sağlar.
 
-Gerçek LLM ile geçici test yapılandırması `LLM_PROVIDER=qwen`, `XAI_PROVIDER=mock` ve yerel `QWEN_MODEL_PATH` kullanır. Qwen, worker başlangıcında bir kez yüklenir; XAI bu aşamada mock kalır. `XAI_PROVIDER=xcomet` henüz uygulanmamıştır.
+Gerçek iki yöntem için `LLM_PROVIDER=qwen`, `XAI_PROVIDER=qwen_counterfactual` ve yerel `QWEN_MODEL_PATH` kullanılır. Her iki yöntem aynı Qwen nesnesini paylaşır; model worker başlangıcında yalnızca bir kez yüklenir. Mock testlerde iki provider da `mock` kalabilir. Eski `MODEL_PROVIDER=mock` yalnızca LLM provider tanımlı değilse fallback'tir. xCOMET MVP kapsamında kullanılmaz veya kurulmaz.
 
 Worker sıralı işler. Her turda:
 
 1. Supabase HTTPS RPC üzerinden `claim_next_model_job` fonksiyonuyla işi atomik claim eder.
 2. Supabase HTTPS RPC üzerinden yalnızca claim ettiği aktif işe ait task payload'ını okur.
-3. `llm_feedback` için seçilen mock veya Qwen LLM adapter'ını, `xai_feedback` için mock XAI adapter'ını çalıştırır.
+3. Task 1 (`llm`) için geleneksel geri bildirim, Task 2 (`xai`) için karşı-olgusal olarak kontrol edilmiş açıklama üretir. Yöntem sırası bütün öğrencilerde sabittir; rastgele atama yapılmaz.
 4. `complete_model_job` RPC'si ile sonucu kaydeder.
 5. Hata olursa `fail_model_job` RPC'si ile temiz kısa hata yazar.
 
@@ -130,7 +130,7 @@ Worker sıralı işler. Her turda:
 
 ## PDF
 
-PDF React PDF ile server tarafında üretilir. Türkçe karakterler için `public/fonts/DejaVuSans.ttf` kullanılır. Raporda teknik model adları yerine `Yöntem A` ve `Yöntem B` gösterilir.
+PDF React PDF ile server tarafında üretilir. Türkçe karakterler için `public/fonts/DejaVuSans.ttf` kullanılır. İlk bölüm iki çalışmanın kaynak/ilk/revize çevirilerini, ikinci bölüm geri bildirimleri ve öğretmen için kalibre edilmemiş iç puanları gösterir. Karşı-olgusal aday metin rapora girmez.
 
 ## Gerçek Qwen Entegrasyonu
 
@@ -142,6 +142,14 @@ PDF React PDF ile server tarafında üretilir. Türkçe karakterler için `publi
 - CPU `64GiB`
 - `enable_thinking=False`
 - Model worker başlangıcında yalnızca bir kez yüklenir
+
+## Ortak Değerlendirme ve Karşı-Olgusal XAI
+
+İki yöntem aynı `translation-evaluation-v1` promptu ve sürümlü JSON kontratını kullanır. Dört boyutta 0-100 iç puan ve en fazla iki önemli sorun üretilir; puanlar öğrenci ekranında gösterilmez ve bilimsel olarak kalibre edilmiş ölçüm sayılmaz. Normal LLM geri bildirimi bu değerlendirmenin kısa açıklama/ipucu görünümüdür; ikinci inference gerektirmez.
+
+XAI, gizli düşünme zinciri değildir. Her sorun için Qwen yalnız hedef İngilizce ifadeye minimal alternatif aday önerir; program metnin geri kalanını koruyarak adayı uygular ve aynı Qwen'le tekrar değerlendirir. Hatanın kalkması veya öneminin düşmesi, yeni major/critical hata çıkmaması ve ilgili boyutun kötüleşmemesi birlikte aranır. Sonuç yalnız aynı modelin kontrollü değişikliğe verdiği kararın tutarlılığını gösterir; bağımsız doğruluk kanıtı değildir. Doğrulanamayan durumlarda temkinli fallback kullanılır. Aday öğrenci çıktısına, PDF'ye veya loglara yazılmaz.
+
+En fazla iki hata ve her hata için en fazla iki aday denenir. İnference sayısı normal yöntem için 1, XAI için en çok 9'dur; JSON bozuksa ilgili çağrı bir kez onarılabilir. Adaylar VRAM güvenliği için sıralı değerlendirilir. Gerçek öğrenci metinleri ve ham model yanıtları loglanmaz.
 
 ## Güvenlik Notları
 

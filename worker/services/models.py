@@ -3,54 +3,96 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Severity = Literal["minor", "major", "critical"]
+Category = Literal["meaning_shift", "omission", "addition", "terminology", "grammar", "fluency", "register_style", "cohesion"]
+Dimension = Literal["meaning_accuracy", "completeness", "grammar_fluency", "terminology_register"]
 
 
-class LLMFeedbackError(BaseModel):
+class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    target_span: str = Field(min_length=1)
-    category: str = Field(min_length=1)
+
+class DimensionScores(StrictModel):
+    meaning_accuracy: int = Field(ge=0, le=100)
+    completeness: int = Field(ge=0, le=100)
+    grammar_fluency: int = Field(ge=0, le=100)
+    terminology_register: int = Field(ge=0, le=100)
+
+
+class EvaluationError(StrictModel):
+    id: str = Field(pattern=r"^error_[1-9][0-9]*$")
+    source_span: str = Field(min_length=1)
+    translation_span: str = Field(min_length=1)
+    category: Category
     severity: Severity
-    explanation: str = Field(min_length=1)
-    hint: str = Field(min_length=1)
+    source_meaning: str = Field(min_length=1)
+    detected_problem: str = Field(min_length=1)
+    student_hint: str = Field(min_length=1)
 
 
-class LLMFeedbackResult(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
+class TranslationEvaluation(StrictModel):
+    schema_version: Literal["1.0"]
+    prompt_version: Literal["translation-evaluation-v1"]
+    model: Literal["Qwen3.8-27B"]
+    language_pair: Literal["tr-en"]
+    overall_score: int = Field(ge=0, le=100)
+    dimension_scores: DimensionScores
+    errors: list[EvaluationError] = Field(max_length=2)
     summary: str = Field(min_length=1)
-    strengths: list[str] = Field(min_length=1)
-    errors: list[LLMFeedbackError]
-    revision_guidance: list[str] = Field(min_length=1)
-
-
-class XAIError(BaseModel):
-    target_span: str
-    target_start: int = Field(ge=0)
-    target_end: int = Field(ge=0)
-    source_span: str
-    severity: Severity
-    confidence: float = Field(ge=0, le=1)
-    category: str
-    explanation: str
-    hint: str
-    detector_model: str
-    explainer_model: str
 
     @model_validator(mode="after")
-    def check_span(self):
-        if self.target_end <= self.target_start:
-            raise ValueError("target_end must be greater than target_start")
+    def unique_error_ids(self):
+        if len({error.id for error in self.errors}) != len(self.errors):
+            raise ValueError("duplicate error id")
         return self
 
 
-class XAIResult(BaseModel):
-    overall_score: float = Field(ge=0, le=1)
+class FeedbackIssue(StrictModel):
+    source_span: str
+    translation_span: str
+    category: Category
+    severity: Severity
+    explanation: str
+    hint: str
+
+
+class LLMFeedbackResult(StrictModel):
+    method: Literal["llm"] = "llm"
     summary: str
-    errors: list[XAIError]
+    errors: list[FeedbackIssue] = Field(max_length=2)
+    evaluation: TranslationEvaluation
 
 
-class TranslationTaskPayload(BaseModel):
+class Verification(StrictModel):
+    status: Literal["verified", "inconclusive"]
+    before_severity: Severity
+    after_severity: Severity | None
+    relevant_dimension: Dimension
+    score_delta: int
+    no_new_major_error: bool
+
+
+class EvidenceItem(StrictModel):
+    source_span: str
+    translation_span: str
+    category: Category
+    severity: Severity
+    decision_explanation: str
+    verification: Verification
+    student_hint: str
+
+
+class XAIResult(StrictModel):
+    method: Literal["xai"] = "xai"
+    summary: str
+    evidence_items: list[EvidenceItem] = Field(max_length=2)
+    evaluation: TranslationEvaluation
+
+
+class CounterfactualCandidate(StrictModel):
+    replacement_span: str = Field(min_length=1, max_length=160)
+
+
+class TranslationTaskPayload(StrictModel):
     id: str
     task_number: int
     method: Literal["llm", "xai"]

@@ -11,7 +11,8 @@ from worker.adapters.llm_qwen import (
     QwenLLMAdapter,
     QwenLoadError,
 )
-from worker.services.models import LLMFeedbackResult
+from worker.services.models import TranslationEvaluation
+from worker.services.models import EvaluationError
 
 
 TRANSLATION = "The proposal seemed hopeful, so the committee cancelled it."
@@ -19,18 +20,28 @@ TRANSLATION = "The proposal seemed hopeful, so the committee cancelled it."
 
 def valid_feedback():
     return {
+        "schema_version": "1.0",
+        "prompt_version": "translation-evaluation-v1",
+        "model": "Qwen3.8-27B",
+        "language_pair": "tr-en",
+        "overall_score": 72,
+        "dimension_scores": {
+            "meaning_accuracy": 65, "completeness": 90,
+            "grammar_fluency": 82, "terminology_register": 70,
+        },
         "summary": "Ana fikir kısmen korunmuş; kararın geçici niteliği kaybolmuş.",
-        "strengths": ["Karar veren aktör doğru aktarılmış."],
         "errors": [
             {
-                "target_span": "cancelled it",
-                "category": "meaning",
+                "id": "error_1",
+                "source_span": "Kaynak",
+                "translation_span": "cancelled it",
+                "category": "meaning_shift",
                 "severity": "major",
-                "explanation": "Kaynakta geçici durdurma var, kesin iptal yok.",
-                "hint": "Kararın kalıcılığını kaynak metinle yeniden karşılaştırın.",
+                "source_meaning": "Geçici durdurma",
+                "detected_problem": "Kesin iptal anlamı",
+                "student_hint": "Kararın kalıcılığını kaynakla karşılaştırın.",
             }
         ],
-        "revision_guidance": ["Kararın geçici oluşunu İngilizcede nasıl göstereceğinizi düşünün."],
     }
 
 
@@ -66,11 +77,11 @@ def test_valid_json_and_second_inference_reuse_one_load(tmp_path, monkeypatch):
     feedback = json.dumps(valid_feedback(), ensure_ascii=False)
     adapter, load_calls, prompts = adapter_without_model(tmp_path, monkeypatch, [feedback, feedback])
 
-    first = adapter.evaluate("Öneri geçici olarak durduruldu.", TRANSLATION)
-    second = adapter.evaluate("Öneri geçici olarak durduruldu.", TRANSLATION)
+    first = adapter.evaluate("Kaynak", TRANSLATION)
+    second = adapter.evaluate("Kaynak", TRANSLATION)
 
     assert first == second
-    assert isinstance(first, LLMFeedbackResult)
+    assert first.method == "llm"
     assert len(load_calls) == 1
     assert len(prompts) == 2
     assert "source_text_tr" in prompts[0]
@@ -82,7 +93,7 @@ def test_json_code_fence_is_cleaned(tmp_path, monkeypatch):
     fenced = "```json\n" + json.dumps(valid_feedback(), ensure_ascii=False) + "\n```"
     adapter, _, prompts = adapter_without_model(tmp_path, monkeypatch, [fenced])
 
-    assert adapter.evaluate("Kaynak", TRANSLATION).errors[0].category == "meaning"
+    assert adapter.evaluate("Kaynak", TRANSLATION).errors[0].category == "meaning_shift"
     assert len(prompts) == 1
 
 
@@ -93,7 +104,7 @@ def test_broken_json_gets_exactly_one_repair(tmp_path, monkeypatch):
 
     assert adapter.evaluate("Kaynak", TRANSLATION).summary
     assert len(prompts) == 2
-    assert "Önceki cevap" in prompts[1]
+    assert "Önceki yanıt" in prompts[1]
 
 
 def test_second_parse_failure_is_controlled_and_silent(tmp_path, monkeypatch, capsys):
@@ -114,9 +125,8 @@ def test_schema_and_target_span_are_validated():
     invalid = valid_feedback()
     invalid["extra"] = "unexpected"
     with pytest.raises(ValidationError):
-        LLMFeedbackResult.model_validate(invalid)
-    with pytest.raises(QwenFeedbackError):
-        QwenLLMAdapter._parse(json.dumps(valid_feedback()), "unrelated translation")
+        TranslationEvaluation.model_validate(invalid)
+    assert QwenLLMAdapter._parse_json(json.dumps(valid_feedback())) == valid_feedback()
 
 
 def test_generation_uses_verified_template_and_deterministic_settings(tmp_path, monkeypatch):
@@ -203,3 +213,15 @@ def test_cuda_oom_becomes_controlled_error(tmp_path, monkeypatch):
     with pytest.raises(QwenInferenceError, match="CUDA belleği") as exc_info:
         adapter._generate("private input details")
     assert "private input details" not in str(exc_info.value)
+
+
+def test_counterfactual_returns_only_replacement_fragment(tmp_path, monkeypatch):
+    adapter, load_calls, prompts = adapter_without_model(
+        tmp_path, monkeypatch, [json.dumps({"replacement_span": "temporarily suspend the project"})]
+    )
+    target = EvaluationError.model_validate(valid_feedback()["errors"][0])
+    replacement = adapter.generate_counterfactual("Kaynak", TRANSLATION, target)
+    assert replacement == "temporarily suspend the project"
+    assert len(load_calls) == 1
+    assert "replacement_span" in prompts[0]
+    assert "<student_data>" in prompts[0]

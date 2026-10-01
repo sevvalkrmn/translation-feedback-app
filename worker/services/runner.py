@@ -8,6 +8,7 @@ from worker.adapters.base import LLMFeedbackAdapter, XAIAdapter
 from worker.adapters.llm_mock import MockLLMAdapter
 from worker.adapters.llm_qwen import QwenLLMAdapter
 from worker.adapters.xai_mock import MockXAIAdapter
+from worker.adapters.xai_qwen_counterfactual import QwenCounterfactualAdapter
 from worker.services.database import claim_next_job, complete_job, fail_job, get_task_for_job, get_worker_client
 
 
@@ -15,18 +16,25 @@ def build_adapters() -> tuple[LLMFeedbackAdapter, XAIAdapter]:
     llm_provider = os.getenv("LLM_PROVIDER") or os.getenv("MODEL_PROVIDER", "mock")
     xai_provider = os.getenv("XAI_PROVIDER", "mock")
 
-    if xai_provider == "xcomet":
-        raise RuntimeError("XAI_PROVIDER=xcomet henüz uygulanmadı.")
-    if xai_provider != "mock":
-        raise RuntimeError("XAI_PROVIDER yalnızca mock veya xcomet olabilir.")
+    if xai_provider not in ("mock", "qwen_counterfactual"):
+        raise RuntimeError("XAI_PROVIDER yalnızca mock veya qwen_counterfactual olabilir.")
 
+    qwen = None
     if llm_provider == "mock":
-        llm_adapter: LLMFeedbackAdapter = MockLLMAdapter()
+        mock_llm = MockLLMAdapter()
+        llm_adapter: LLMFeedbackAdapter = mock_llm
     elif llm_provider == "qwen":
-        llm_adapter = QwenLLMAdapter(os.getenv("QWEN_MODEL_PATH"))
+        qwen = QwenLLMAdapter(os.getenv("QWEN_MODEL_PATH"))
+        llm_adapter = qwen
     else:
         raise RuntimeError("LLM_PROVIDER yalnızca mock veya qwen olabilir.")
-    return llm_adapter, MockXAIAdapter()
+
+    if xai_provider == "mock":
+        xai_adapter: XAIAdapter = MockXAIAdapter(mock_llm.engine if llm_provider == "mock" else None)
+    else:
+        qwen = qwen or QwenLLMAdapter(os.getenv("QWEN_MODEL_PATH"))
+        xai_adapter = QwenCounterfactualAdapter(qwen)
+    return llm_adapter, xai_adapter
 
 
 def process_once(
@@ -49,7 +57,7 @@ def process_once(
             elif job["job_type"] == "xai_feedback":
                 result = xai_adapter.evaluate(task["source_text"], task["initial_translation"])
                 model_name = xai_adapter.model_name
-                provider = "mock"
+                provider = getattr(xai_adapter, "provider", "mock")
             else:
                 raise RuntimeError(f"Desteklenmeyen iş türü: {job['job_type']}")
 
