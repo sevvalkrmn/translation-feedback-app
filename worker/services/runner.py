@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from worker.adapters.base import LLMFeedbackAdapter, XAIAdapter
 from worker.adapters.llm_mock import MockLLMAdapter
 from worker.adapters.xai_mock import MockXAIAdapter
-from worker.services.database import claim_next_job, complete_job, fail_job, get_connection, get_task_for_job
+from worker.services.database import claim_next_job, complete_job, fail_job, get_task_for_job, get_worker_client
 
 
 def build_adapters() -> tuple[LLMFeedbackAdapter, XAIAdapter]:
@@ -23,13 +23,13 @@ def process_once(
     xai_adapter: XAIAdapter,
     lease_seconds: int = 300,
 ) -> bool:
-    with get_connection() as conn:
-        job = claim_next_job(conn, worker_id, lease_seconds)
+    with get_worker_client() as client:
+        job = claim_next_job(client, worker_id, lease_seconds)
         if not job:
             return False
 
         try:
-            task = get_task_for_job(conn, str(job["task_id"]))
+            task = get_task_for_job(client, str(job["id"]), worker_id)
             if job["job_type"] == "llm_feedback":
                 result = llm_adapter.evaluate(task["source_text"], task["initial_translation"])
                 model_name = llm_adapter.model_name
@@ -40,7 +40,7 @@ def process_once(
                 raise RuntimeError(f"Desteklenmeyen iş türü: {job['job_type']}")
 
             complete_job(
-                conn,
+                client,
                 str(job["id"]),
                 worker_id,
                 model_name,
@@ -49,14 +49,13 @@ def process_once(
             )
             return True
         except Exception as exc:  # noqa: BLE001 - worker sanitizes before writing.
-            fail_job(conn, str(job["id"]), worker_id, f"{type(exc).__name__}: {exc}")
+            fail_job(client, str(job["id"]), worker_id, f"{type(exc).__name__}: {exc}")
             traceback.print_exc()
             return True
 
 
 def run_forever() -> None:
     load_dotenv(".env.worker.local")
-    load_dotenv(".env.local")
     worker_id = os.getenv("WORKER_ID", "rig-worker-1")
     poll_interval = float(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "2"))
     llm_adapter, xai_adapter = build_adapters()

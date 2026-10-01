@@ -16,8 +16,8 @@ export async function GET(
     return NextResponse.json({ error: "Geçersiz çalışma numarası." }, { status: 400 });
   }
 
-  await requireSessionAccess(sessionId);
-  const bundle = await getTaskBundle(sessionId, numericTask as 1 | 2);
+  const { accessTokenHash } = await requireSessionAccess(sessionId);
+  const bundle = await getTaskBundle({ sessionId, accessTokenHash, taskNumber: numericTask as 1 | 2 });
 
   return NextResponse.json({
     taskStatus: bundle.task?.status ?? null,

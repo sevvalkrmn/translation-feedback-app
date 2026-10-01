@@ -3,12 +3,39 @@ import "server-only";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import type {
   FeedbackRecord,
-  ModelJob,
+  ModelJobStatus,
   ResultBundle,
   StudentSession,
   TaskBundle,
   TranslationTask
 } from "@/types/feedback";
+
+type SessionScopedInput = {
+  sessionId: string;
+  accessTokenHash: string;
+};
+
+type TaskBundleRpcRow = {
+  task: unknown | null;
+  feedback: unknown | null;
+  job: unknown | null;
+};
+
+type ResultBundleRpcRow = {
+  session: unknown;
+  task1: unknown;
+  task2: unknown;
+  feedback1: unknown;
+  feedback2: unknown;
+};
+
+function rpcErrorMessage(prefix: string, message: string) {
+  return `${prefix}: ${message}`;
+}
+
+function castNullable<T>(value: unknown | null | undefined): T | null {
+  return value == null ? null : (value as T);
+}
 
 export async function createStudentSessionRecord(input: {
   firstName: string;
@@ -17,212 +44,153 @@ export async function createStudentSessionRecord(input: {
 }) {
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase
-    .from("student_sessions")
-    .insert({
-      first_name: input.firstName,
-      last_name: input.lastName,
-      access_token_hash: input.accessTokenHash,
-      status: "active"
+    .rpc("create_student_session", {
+      p_first_name: input.firstName,
+      p_last_name: input.lastName,
+      p_access_token_hash: input.accessTokenHash
     })
-    .select("*")
     .single();
 
   if (error) {
-    throw new Error(`Oturum oluşturulamadı: ${error.message}`);
+    throw new Error(rpcErrorMessage("Oturum oluşturulamadı", error.message));
   }
   return data as StudentSession;
 }
 
-export async function getStudentSession(sessionId: string) {
+export async function verifyStudentSessionAccess(input: SessionScopedInput) {
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase
-    .from("student_sessions")
-    .select("*")
-    .eq("id", sessionId)
-    .single();
-
-  if (error || !data) {
-    return null;
-  }
-  return data as StudentSession;
-}
-
-export async function getTasksForSession(sessionId: string) {
-  const supabase = getSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("translation_tasks")
-    .select("*")
-    .eq("session_id", sessionId)
-    .order("task_number", { ascending: true });
+    .rpc("verify_student_session_access", {
+      p_session_id: input.sessionId,
+      p_access_token_hash: input.accessTokenHash
+    })
+    .maybeSingle();
 
   if (error) {
-    throw new Error(`Çalışmalar okunamadı: ${error.message}`);
+    throw new Error(rpcErrorMessage("Oturum doğrulanamadı", error.message));
+  }
+  return data as StudentSession | null;
+}
+
+export async function getTasksForSession(input: SessionScopedInput) {
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase.rpc("list_session_tasks", {
+    p_session_id: input.sessionId,
+    p_access_token_hash: input.accessTokenHash
+  });
+
+  if (error) {
+    throw new Error(rpcErrorMessage("Çalışmalar okunamadı", error.message));
   }
   return (data ?? []) as TranslationTask[];
 }
 
-export async function getTaskBundle(sessionId: string, taskNumber: 1 | 2): Promise<TaskBundle> {
+export async function getTaskBundle(input: SessionScopedInput & { taskNumber: 1 | 2 }): Promise<TaskBundle> {
   const supabase = getSupabaseServiceClient();
-  const { data: task, error: taskError } = await supabase
-    .from("translation_tasks")
-    .select("*")
-    .eq("session_id", sessionId)
-    .eq("task_number", taskNumber)
+  const { data, error } = await supabase
+    .rpc("get_session_task_bundle", {
+      p_session_id: input.sessionId,
+      p_access_token_hash: input.accessTokenHash,
+      p_task_number: input.taskNumber
+    })
     .maybeSingle();
 
-  if (taskError) {
-    throw new Error(`Çalışma okunamadı: ${taskError.message}`);
+  if (error) {
+    throw new Error(rpcErrorMessage("Çalışma okunamadı", error.message));
   }
 
-  if (!task) {
+  const row = data as TaskBundleRpcRow | null;
+  if (!row) {
     return { task: null, feedback: null, job: null };
   }
 
-  const [{ data: feedback, error: feedbackError }, { data: job, error: jobError }] = await Promise.all([
-    supabase
-      .from("feedbacks")
-      .select("*")
-      .eq("task_id", task.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("model_jobs")
-      .select("*")
-      .eq("task_id", task.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-  ]);
-
-  if (feedbackError) {
-    throw new Error(`Geri bildirim okunamadı: ${feedbackError.message}`);
-  }
-  if (jobError) {
-    throw new Error(`İş durumu okunamadı: ${jobError.message}`);
-  }
-
   return {
-    task: task as TranslationTask,
-    feedback: feedback as FeedbackRecord | null,
-    job: job as ModelJob | null
+    task: castNullable<TranslationTask>(row.task),
+    feedback: castNullable<FeedbackRecord>(row.feedback),
+    job: castNullable<ModelJobStatus>(row.job)
   };
 }
 
-export async function submitInitialTask(input: {
-  sessionId: string;
+export async function submitInitialTask(input: SessionScopedInput & {
   taskNumber: 1 | 2;
   sourceText: string;
   initialTranslation: string;
 }) {
   const supabase = getSupabaseServiceClient();
-  const { data, error } = await supabase.rpc("submit_translation_task", {
-    p_session_id: input.sessionId,
-    p_task_number: input.taskNumber,
-    p_source_text: input.sourceText,
-    p_initial_translation: input.initialTranslation
-  });
+  const { data, error } = await supabase
+    .rpc("submit_session_translation_task", {
+      p_session_id: input.sessionId,
+      p_access_token_hash: input.accessTokenHash,
+      p_task_number: input.taskNumber,
+      p_source_text: input.sourceText,
+      p_initial_translation: input.initialTranslation
+    })
+    .single();
 
   if (error) {
-    throw new Error(`Çalışma gönderilemedi: ${error.message}`);
+    throw new Error(rpcErrorMessage("Çalışma gönderilemedi", error.message));
   }
 
   return data as TranslationTask;
 }
 
-export async function submitTaskRevision(input: {
-  sessionId: string;
+export async function submitTaskRevision(input: SessionScopedInput & {
   taskNumber: 1 | 2;
   revisedTranslation: string;
 }) {
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase
-    .from("translation_tasks")
-    .update({
-      revised_translation: input.revisedTranslation,
-      status: "revised",
-      revised_at: new Date().toISOString()
+    .rpc("submit_session_task_revision", {
+      p_session_id: input.sessionId,
+      p_access_token_hash: input.accessTokenHash,
+      p_task_number: input.taskNumber,
+      p_revised_translation: input.revisedTranslation
     })
-    .eq("session_id", input.sessionId)
-    .eq("task_number", input.taskNumber)
-    .eq("status", "feedback_ready")
-    .is("revised_translation", null)
-    .select("*")
     .single();
 
   if (error) {
-    throw new Error(`Son çeviri kaydedilemedi: ${error.message}`);
+    throw new Error(rpcErrorMessage("Son çeviri kaydedilemedi", error.message));
   }
 
-  await markSessionCompletedIfReady(input.sessionId);
   return data as TranslationTask;
 }
 
-export async function retryFailedJob(sessionId: string, taskNumber: 1 | 2) {
+export async function retryFailedJob(input: SessionScopedInput & { taskNumber: 1 | 2 }) {
   const supabase = getSupabaseServiceClient();
-  const bundle = await getTaskBundle(sessionId, taskNumber);
-  if (!bundle.task || !bundle.job || bundle.job.status !== "failed") {
-    throw new Error("Yeniden denenebilir başarısız iş bulunamadı.");
-  }
-
-  const { error } = await supabase
-    .from("model_jobs")
-    .update({
-      status: "queued",
-      attempt_count: 0,
-      locked_by: null,
-      lease_expires_at: null,
-      last_error: null,
-      started_at: null,
-      completed_at: null
-    })
-    .eq("id", bundle.job.id);
+  const { error } = await supabase.rpc("retry_failed_session_job", {
+    p_session_id: input.sessionId,
+    p_access_token_hash: input.accessTokenHash,
+    p_task_number: input.taskNumber
+  });
 
   if (error) {
-    throw new Error(`İş yeniden sıraya alınamadı: ${error.message}`);
+    throw new Error(rpcErrorMessage("İş yeniden sıraya alınamadı", error.message));
   }
 }
 
-export async function getResultBundle(sessionId: string): Promise<ResultBundle | null> {
-  const session = await getStudentSession(sessionId);
-  if (!session) {
-    return null;
+export async function getResultBundle(input: SessionScopedInput): Promise<ResultBundle | null> {
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase
+    .rpc("get_session_result_bundle", {
+      p_session_id: input.sessionId,
+      p_access_token_hash: input.accessTokenHash
+    })
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(rpcErrorMessage("Sonuç verileri okunamadı", error.message));
   }
 
-  const [task1Bundle, task2Bundle] = await Promise.all([
-    getTaskBundle(sessionId, 1),
-    getTaskBundle(sessionId, 2)
-  ]);
-
-  if (!task1Bundle.task || !task2Bundle.task || !task1Bundle.feedback || !task2Bundle.feedback) {
+  const row = data as ResultBundleRpcRow | null;
+  if (!row) {
     return null;
   }
 
   return {
-    session,
-    task1: task1Bundle.task,
-    task2: task2Bundle.task,
-    feedback1: task1Bundle.feedback,
-    feedback2: task2Bundle.feedback
+    session: row.session as StudentSession,
+    task1: row.task1 as TranslationTask,
+    task2: row.task2 as TranslationTask,
+    feedback1: row.feedback1 as FeedbackRecord,
+    feedback2: row.feedback2 as FeedbackRecord
   };
-}
-
-async function markSessionCompletedIfReady(sessionId: string) {
-  const supabase = getSupabaseServiceClient();
-  const tasks = await getTasksForSession(sessionId);
-  const ready = tasks.some((task) => task.task_number === 1 && task.status === "revised")
-    && tasks.some((task) => task.task_number === 2 && task.status === "revised");
-
-  if (!ready) {
-    return;
-  }
-
-  const { error } = await supabase
-    .from("student_sessions")
-    .update({ status: "completed", completed_at: new Date().toISOString() })
-    .eq("id", sessionId);
-
-  if (error) {
-    throw new Error(`Oturum tamamlanamadı: ${error.message}`);
-  }
 }

@@ -12,14 +12,14 @@ export const runtime = "nodejs";
 
 export default async function ResultPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const { session, tasks } = await requireSessionWithTasks(sessionId);
+  const { session, accessTokenHash, tasks } = await requireSessionWithTasks(sessionId);
 
   if (!canOpenResult(tasks)) {
     const task1 = tasks.find((task) => task.task_number === 1);
     redirect(task1?.status === "revised" ? `/session/${sessionId}/task/2` : `/session/${sessionId}/task/1`);
   }
 
-  const result = await getResultBundle(sessionId);
+  const result = await getResultBundle({ sessionId, accessTokenHash });
   if (!result) {
     notFound();
   }

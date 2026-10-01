@@ -24,13 +24,13 @@ export default async function TaskPage({
     notFound();
   }
   const taskNumber = numericTask as 1 | 2;
-  const { session, tasks } = await requireSessionWithTasks(sessionId);
+  const { session, accessTokenHash, tasks } = await requireSessionWithTasks(sessionId);
 
   if (!canOpenTask(taskNumber, tasks)) {
     redirect(`/session/${sessionId}/task/1`);
   }
 
-  const bundle = await getTaskBundle(sessionId, taskNumber);
+  const bundle = await getTaskBundle({ sessionId, accessTokenHash, taskNumber });
   const title = `Çalışma ${taskNumber}`;
   const description =
     taskNumber === 1

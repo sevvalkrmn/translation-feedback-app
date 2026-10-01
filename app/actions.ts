@@ -48,7 +48,7 @@ export async function startSessionAction(formData: FormData) {
 }
 
 export async function submitInitialTaskAction(sessionId: string, taskNumberInput: number, formData: FormData) {
-  await requireSessionAccess(sessionId);
+  const { accessTokenHash } = await requireSessionAccess(sessionId);
   const taskNumber = taskNumberSchema.parse(taskNumberInput);
   const parsed = initialTaskSchema.parse({
     sourceText: formValue(formData, "sourceText"),
@@ -57,6 +57,7 @@ export async function submitInitialTaskAction(sessionId: string, taskNumberInput
 
   await submitInitialTask({
     sessionId,
+    accessTokenHash,
     taskNumber,
     sourceText: parsed.sourceText,
     initialTranslation: parsed.initialTranslation
@@ -66,7 +67,7 @@ export async function submitInitialTaskAction(sessionId: string, taskNumberInput
 }
 
 export async function submitRevisionAction(sessionId: string, taskNumberInput: number, formData: FormData) {
-  await requireSessionAccess(sessionId);
+  const { accessTokenHash } = await requireSessionAccess(sessionId);
   const taskNumber = taskNumberSchema.parse(taskNumberInput);
   const parsed = revisionSchema.parse({
     revisedTranslation: formValue(formData, "revisedTranslation")
@@ -74,6 +75,7 @@ export async function submitRevisionAction(sessionId: string, taskNumberInput: n
 
   await submitTaskRevision({
     sessionId,
+    accessTokenHash,
     taskNumber,
     revisedTranslation: parsed.revisedTranslation
   });
@@ -85,8 +87,8 @@ export async function submitRevisionAction(sessionId: string, taskNumberInput: n
 }
 
 export async function retryJobAction(sessionId: string, taskNumberInput: number) {
-  await requireSessionAccess(sessionId);
+  const { accessTokenHash } = await requireSessionAccess(sessionId);
   const taskNumber = taskNumberSchema.parse(taskNumberInput);
-  await retryFailedJob(sessionId, taskNumber);
+  await retryFailedJob({ sessionId, accessTokenHash, taskNumber });
   redirect(`/session/${sessionId}/task/${taskNumber}`);
 }

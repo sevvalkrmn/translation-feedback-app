@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { retryJobAction } from "@/app/actions";
-import type { ModelJob } from "@/types/feedback";
+import type { JobStatus as JobStatusValue, ModelJobStatus } from "@/types/feedback";
 
 export function JobStatus({
   sessionId,
@@ -13,7 +13,7 @@ export function JobStatus({
 }: {
   sessionId: string;
   taskNumber: 1 | 2;
-  initialJob: ModelJob | null;
+  initialJob: ModelJobStatus | null;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState(initialJob?.status ?? "queued");
@@ -31,7 +31,7 @@ export function JobStatus({
       if (!response.ok) {
         return;
       }
-      const payload = (await response.json()) as { jobStatus?: ModelJob["status"] };
+      const payload = (await response.json()) as { jobStatus?: JobStatusValue };
       if (payload.jobStatus) {
         setStatus(payload.jobStatus);
       }

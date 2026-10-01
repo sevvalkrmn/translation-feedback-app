@@ -13,7 +13,6 @@ describe("PDF report", () => {
         id: crypto.randomUUID(),
         first_name: "Çağla",
         last_name: "Şimşek",
-        access_token_hash: "hash",
         status: "completed",
         created_at: now,
         completed_at: now

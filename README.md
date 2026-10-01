@@ -26,21 +26,27 @@ Qwen model klasörü değiştirilmez:
 
 ## Ortam Değişkenleri
 
-`.env.example` dosyasını temel alarak web uygulaması için gerçek değerleri `.env.local` veya deployment ortamında tanımlayın. Worker için `.env.worker.example` dosyasını temel alarak `.env.worker.local` kullanın. Secret değerleri istemci bundle'ına koymayın.
+`.env.example` dosyasını temel alarak web uygulaması için gerçek değerleri `.env.local` veya deployment ortamında tanımlayın:
 
 ```text
 NEXT_PUBLIC_APP_URL=
 SUPABASE_URL=
 SUPABASE_SECRET_KEY=
 SESSION_TOKEN_PEPPER=
-WORKER_DATABASE_URL=
+```
+
+Worker için `.env.worker.example` dosyasını temel alarak `.env.worker.local` kullanın. Web ve worker için ayrı Supabase secret key'leri tanımlayın:
+
+```text
+SUPABASE_URL=
+SUPABASE_SECRET_KEY=
 WORKER_ID=
 WORKER_POLL_INTERVAL_SECONDS=
 MODEL_PROVIDER=mock
 QWEN_MODEL_PATH=/media/ailab-rig/943b1761-0043-4605-b329-9f6c0e5a6402/models/Qwen3.8-27B
 ```
 
-`SUPABASE_SECRET_KEY`, `WORKER_DATABASE_URL` ve `SESSION_TOKEN_PEPPER` hiçbir zaman `NEXT_PUBLIC_` ile tanımlanmamalıdır.
+`SUPABASE_SECRET_KEY` ve `SESSION_TOKEN_PEPPER` hiçbir zaman `NEXT_PUBLIC_` ile tanımlanmamalıdır. Worker, doğrudan PostgreSQL bağlantısı kullanmaz; Supabase HTTPS Data API/RPC üzerinden `SUPABASE_URL` ve worker'a özel `SUPABASE_SECRET_KEY` ile çalışır.
 
 ## Kurulum
 
@@ -58,19 +64,15 @@ conda run -n qwen38 python -m pip install -r requirements-worker.txt
 
 ## Supabase Migration
 
-Bağlantı bilgileri hazır olduğunda migration dosyasını Supabase projesine uygulayın:
-
-```bash
-supabase db push
-```
-
-Migration:
+Bu üç migration bağlı Supabase projesine uygulanmıştır. Remote migration geçmişiyle yerel dosya sürümleri eşleşir; aynı SQL'i tekrar uygulamayın:
 
 ```text
-supabase/migrations/0001_initial_schema.sql
+supabase/migrations/20261001083125_initial_schema.sql
+supabase/migrations/20261001101141_add_worker_task_payload_rpc.sql
+supabase/migrations/20261001111959_add_web_workflow_rpcs.sql
 ```
 
-RLS tüm public tablolarda aktiftir. Tarayıcıya doğrudan tablo yetkisi verilmez. Next.js server tarafı `SUPABASE_SECRET_KEY`, worker ise `WORKER_DATABASE_URL` kullanır.
+RLS tüm public tablolarda aktiftir. Tarayıcıya doğrudan tablo yetkisi verilmez. Next.js server tarafı `SUPABASE_SECRET_KEY`, worker ise Supabase HTTPS RPC çağrıları için kendi `SUPABASE_SECRET_KEY` değerini kullanır.
 
 ## Web Uygulamasını Çalıştırma
 
@@ -95,14 +97,15 @@ npm run build
 PYTHONPATH=. conda run -n qwen38 python -m worker.main
 ```
 
-Worker `.env.worker.local` dosyasını okur. Bu dosya Git dışındadır.
+Worker yalnızca `.env.worker.local` dosyasını okur. Bu dosya Git dışındadır ve worker'a özel `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `MODEL_PROVIDER=mock` değerlerini içermelidir.
 
 Worker sıralı işler. Her turda:
 
-1. `claim_next_model_job` fonksiyonuyla işi atomik claim eder.
-2. `llm_feedback` için `MockLLMAdapter`, `xai_feedback` için `MockXAIAdapter` çalıştırır.
-3. `complete_model_job` ile sonucu kaydeder.
-4. Hata olursa `fail_model_job` ile temiz kısa hata yazar.
+1. Supabase HTTPS RPC üzerinden `claim_next_model_job` fonksiyonuyla işi atomik claim eder.
+2. Supabase HTTPS RPC üzerinden yalnızca claim ettiği aktif işe ait task payload'ını okur.
+3. `llm_feedback` için `MockLLMAdapter`, `xai_feedback` için `MockXAIAdapter` çalıştırır.
+4. `complete_model_job` RPC'si ile sonucu kaydeder.
+5. Hata olursa `fail_model_job` RPC'si ile temiz kısa hata yazar.
 
 ## Sayfalar
 

@@ -51,7 +51,6 @@ export interface StudentSession {
   id: string;
   first_name: string;
   last_name: string;
-  access_token_hash: string;
   status: SessionStatus;
   created_at: string;
   completed_at: string | null;
@@ -96,10 +95,14 @@ export interface ModelJob {
   completed_at: string | null;
 }
 
+export interface ModelJobStatus {
+  status: JobStatus;
+}
+
 export interface TaskBundle {
   task: TranslationTask | null;
   feedback: FeedbackRecord | null;
-  job: ModelJob | null;
+  job: ModelJobStatus | null;
 }
 
 export interface ResultBundle {

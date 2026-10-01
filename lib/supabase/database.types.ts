@@ -223,9 +223,123 @@ export type Database = {
         }
         Returns: undefined
       }
+      create_student_session: {
+        Args: {
+          p_access_token_hash: string
+          p_first_name: string
+          p_last_name: string
+        }
+        Returns: {
+          completed_at: string
+          created_at: string
+          first_name: string
+          id: string
+          last_name: string
+          status: string
+        }[]
+      }
       fail_model_job: {
         Args: { p_error: string; p_job_id: string; p_worker_id: string }
         Returns: undefined
+      }
+      get_claimed_job_task_payload: {
+        Args: { p_job_id: string; p_worker_id: string }
+        Returns: {
+          id: string
+          initial_translation: string
+          method: string
+          source_text: string
+          task_number: number
+        }[]
+      }
+      get_session_result_bundle: {
+        Args: { p_access_token_hash: string; p_session_id: string }
+        Returns: {
+          feedback1: Json
+          feedback2: Json
+          session: Json
+          task1: Json
+          task2: Json
+        }[]
+      }
+      get_session_task_bundle: {
+        Args: {
+          p_access_token_hash: string
+          p_session_id: string
+          p_task_number: number
+        }
+        Returns: {
+          feedback: Json
+          job: Json
+          task: Json
+        }[]
+      }
+      list_session_tasks: {
+        Args: { p_access_token_hash: string; p_session_id: string }
+        Returns: {
+          created_at: string
+          id: string
+          initial_translation: string
+          method: string
+          revised_at: string
+          revised_translation: string
+          session_id: string
+          source_text: string
+          status: string
+          submitted_at: string
+          task_number: number
+        }[]
+      }
+      retry_failed_session_job: {
+        Args: {
+          p_access_token_hash: string
+          p_session_id: string
+          p_task_number: number
+        }
+        Returns: undefined
+      }
+      submit_session_task_revision: {
+        Args: {
+          p_access_token_hash: string
+          p_revised_translation: string
+          p_session_id: string
+          p_task_number: number
+        }
+        Returns: {
+          created_at: string
+          id: string
+          initial_translation: string
+          method: string
+          revised_at: string
+          revised_translation: string
+          session_id: string
+          source_text: string
+          status: string
+          submitted_at: string
+          task_number: number
+        }[]
+      }
+      submit_session_translation_task: {
+        Args: {
+          p_access_token_hash: string
+          p_initial_translation: string
+          p_session_id: string
+          p_source_text: string
+          p_task_number: number
+        }
+        Returns: {
+          created_at: string
+          id: string
+          initial_translation: string
+          method: string
+          revised_at: string
+          revised_translation: string
+          session_id: string
+          source_text: string
+          status: string
+          submitted_at: string
+          task_number: number
+        }[]
       }
       submit_translation_task: {
         Args: {
@@ -254,6 +368,17 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      verify_student_session_access: {
+        Args: { p_access_token_hash: string; p_session_id: string }
+        Returns: {
+          completed_at: string
+          created_at: string
+          first_name: string
+          id: string
+          last_name: string
+          status: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
@@ -272,12 +397,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -301,11 +426,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -326,11 +451,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -351,11 +476,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -368,11 +493,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

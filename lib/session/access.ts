@@ -3,8 +3,8 @@ import "server-only";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
-import { getStudentSession, getTasksForSession } from "@/lib/supabase/repository";
-import { constantTimeEquals, hashAccessToken, SESSION_COOKIE_NAME } from "@/lib/session/tokens";
+import { getTasksForSession, verifyStudentSessionAccess } from "@/lib/supabase/repository";
+import { hashAccessToken, SESSION_COOKIE_NAME } from "@/lib/session/tokens";
 
 export async function requireSessionAccess(sessionId: string) {
   const cookieStore = await cookies();
@@ -15,21 +15,17 @@ export async function requireSessionAccess(sessionId: string) {
     notFound();
   }
 
-  const session = await getStudentSession(sessionId);
+  const accessTokenHash = hashAccessToken(token, pepper);
+  const session = await verifyStudentSessionAccess({ sessionId, accessTokenHash });
   if (!session) {
     notFound();
   }
 
-  const tokenHash = hashAccessToken(token, pepper);
-  if (!constantTimeEquals(tokenHash, session.access_token_hash)) {
-    notFound();
-  }
-
-  return session;
+  return { session, accessTokenHash };
 }
 
 export async function requireSessionWithTasks(sessionId: string) {
-  const session = await requireSessionAccess(sessionId);
-  const tasks = await getTasksForSession(sessionId);
-  return { session, tasks };
+  const { session, accessTokenHash } = await requireSessionAccess(sessionId);
+  const tasks = await getTasksForSession({ sessionId, accessTokenHash });
+  return { session, accessTokenHash, tasks };
 }

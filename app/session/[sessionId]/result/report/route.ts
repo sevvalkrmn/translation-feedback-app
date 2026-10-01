@@ -11,13 +11,13 @@ export const runtime = "nodejs";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const { tasks } = await requireSessionWithTasks(sessionId);
+  const { accessTokenHash, tasks } = await requireSessionWithTasks(sessionId);
 
   if (!canOpenResult(tasks)) {
     redirect(`/session/${sessionId}/task/1`);
   }
 
-  const result = await getResultBundle(sessionId);
+  const result = await getResultBundle({ sessionId, accessTokenHash });
   if (!result) {
     notFound();
   }
