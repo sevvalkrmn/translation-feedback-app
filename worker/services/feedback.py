@@ -1,3 +1,4 @@
+import re
 from typing import Protocol
 
 from worker.services.models import (
@@ -39,6 +40,61 @@ def validate_evaluation(evaluation: TranslationEvaluation, source: str, translat
     for error in evaluation.errors:
         if error.source_span not in source or error.translation_span not in translation:
             raise ValueError("evaluation span not found")
+
+
+def _critical_supported(error: EvaluationError, source: str, translation: str) -> bool:
+    evidence = error.critical_evidence
+    if evidence is None:
+        return False
+    if exact_span_start(source, evidence.source_span) is None or exact_span_start(translation, evidence.translation_span) is None:
+        return False
+    if not (
+        (error.source_span in evidence.source_span or evidence.source_span in error.source_span)
+        and (error.translation_span in evidence.translation_span or evidence.translation_span in error.translation_span)
+    ):
+        return False
+
+    source_part = evidence.source_span.casefold()
+    translation_part = evidence.translation_span.casefold()
+    if evidence.criterion == "claim_reversal":
+        if error.category != "meaning_shift" or len(re.split(r"(?<=[.!?])\s+", source.strip())) != 1:
+            return False
+        if any(term in source_part or term in translation_part for term in (" not ", " never ", " değil", "yok", "onaylanmad", "reddedilmed")):
+            return False
+        approval = ("onay", "kabul", "approv", "accept")
+        rejection = ("redd", "reject", "refus", "declin")
+        return (
+            (any(term in source_part for term in approval) and any(term in translation_part for term in rejection))
+            or (any(term in source_part for term in rejection) and any(term in translation_part for term in approval))
+        )
+
+    if evidence.criterion == "central_sentence_omitted":
+        sentences = re.split(r"(?<=[.!?])\s+", source.strip())
+        if error.category != "omission" or len(sentences) < 2:
+            return False
+        first = sentences[0].strip(" .!?")
+        source_words = len(source.split())
+        return (
+            evidence.source_span.strip(" .!?") == first
+            and len(first.split()) >= 0.4 * source_words
+            and len(translation.split()) <= 0.75 * source_words
+        )
+
+    return (
+        error.category in ("meaning_shift", "omission")
+        and len(source.split()) >= 6
+        and len(translation.split()) <= max(2, 0.2 * len(source.split()))
+        and evidence.translation_span.strip() == translation.strip()
+    )
+
+
+def calibrate_evaluation(evaluation: TranslationEvaluation, source: str, translation: str) -> TranslationEvaluation:
+    errors = [
+        error if error.severity != "critical" or _critical_supported(error, source, translation)
+        else error.model_copy(update={"severity": "major"})
+        for error in evaluation.errors
+    ]
+    return evaluation.model_copy(update={"errors": errors})
 
 
 def important_errors(evaluation: TranslationEvaluation) -> list[EvaluationError]:

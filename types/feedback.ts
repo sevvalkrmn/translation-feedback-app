@@ -27,7 +27,7 @@ export interface EvaluationError {
 
 export interface TranslationEvaluation {
   schema_version: "1.0";
-  prompt_version: "translation-evaluation-v1";
+  prompt_version: "translation-evaluation-v1" | "translation-evaluation-v1.1";
   model: "Qwen3.8-27B";
   language_pair: "tr-en";
   overall_score: number;

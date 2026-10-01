@@ -21,7 +21,7 @@ TRANSLATION = "The proposal seemed hopeful, so the committee cancelled it."
 def valid_feedback():
     return {
         "schema_version": "1.0",
-        "prompt_version": "translation-evaluation-v1",
+        "prompt_version": "translation-evaluation-v1.1",
         "model": "Qwen3.8-27B",
         "language_pair": "tr-en",
         "overall_score": 72,
@@ -87,6 +87,29 @@ def test_valid_json_and_second_inference_reuse_one_load(tmp_path, monkeypatch):
     assert "source_text_tr" in prompts[0]
     assert "student_translation_en" in prompts[0]
     assert "additionalProperties" in prompts[0]
+
+
+def test_critical_without_evidence_is_downgraded_in_adapter(tmp_path, monkeypatch):
+    data = valid_feedback()
+    data["errors"][0]["severity"] = "critical"
+    adapter, _, prompts = adapter_without_model(tmp_path, monkeypatch, [json.dumps(data, ensure_ascii=False)])
+
+    result = adapter.evaluate("Kaynak", TRANSLATION)
+
+    assert result.errors[0].severity == "major"
+    assert result.evaluation.errors[0].severity == "major"
+    assert "bus yerine train = major" in prompts[0]
+
+
+def test_old_prompt_version_gets_one_repair(tmp_path, monkeypatch):
+    old = valid_feedback()
+    old["prompt_version"] = "translation-evaluation-v1"
+    adapter, _, prompts = adapter_without_model(tmp_path, monkeypatch, [
+        json.dumps(old, ensure_ascii=False), json.dumps(valid_feedback(), ensure_ascii=False),
+    ])
+
+    assert adapter.evaluate("Kaynak", TRANSLATION).evaluation.prompt_version == "translation-evaluation-v1.1"
+    assert len(prompts) == 2
 
 
 def test_json_code_fence_is_cleaned(tmp_path, monkeypatch):

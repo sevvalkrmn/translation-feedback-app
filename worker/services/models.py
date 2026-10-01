@@ -18,6 +18,12 @@ class DimensionScores(StrictModel):
     terminology_register: int = Field(ge=0, le=100)
 
 
+class CriticalEvidence(StrictModel):
+    criterion: Literal["claim_reversal", "central_sentence_omitted", "unusable_translation"]
+    source_span: str = Field(min_length=1)
+    translation_span: str = Field(min_length=1)
+
+
 class EvaluationError(StrictModel):
     id: str = Field(pattern=r"^error_[1-9][0-9]*$")
     source_span: str = Field(min_length=1)
@@ -27,11 +33,12 @@ class EvaluationError(StrictModel):
     source_meaning: str = Field(min_length=1)
     detected_problem: str = Field(min_length=1)
     student_hint: str = Field(min_length=1)
+    critical_evidence: CriticalEvidence | None = Field(default=None, exclude=True)
 
 
 class TranslationEvaluation(StrictModel):
     schema_version: Literal["1.0"]
-    prompt_version: Literal["translation-evaluation-v1"]
+    prompt_version: Literal["translation-evaluation-v1", "translation-evaluation-v1.1"]
     model: Literal["Qwen3.8-27B"]
     language_pair: Literal["tr-en"]
     overall_score: int = Field(ge=0, le=100)

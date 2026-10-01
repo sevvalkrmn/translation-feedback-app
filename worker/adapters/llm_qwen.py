@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from worker.services.feedback import normal_feedback, validate_evaluation
+from worker.services.feedback import calibrate_evaluation, normal_feedback, validate_evaluation
 from worker.services.models import CounterfactualCandidate, EvaluationError, LLMFeedbackResult, TranslationEvaluation
 
 
@@ -35,7 +35,7 @@ class QwenLLMAdapter:
         self.model_path = path
         self._torch, self._processor, self._model = self._load_runtime()
         prompts = Path(__file__).resolve().parents[1] / "prompts"
-        self._evaluation_prompt = (prompts / "translation_evaluation_v1.txt").read_text(encoding="utf-8")
+        self._evaluation_prompt = (prompts / "translation_evaluation_v1_1.txt").read_text(encoding="utf-8")
         self._counterfactual_prompt = (prompts / "counterfactual_candidate_v1.txt").read_text(encoding="utf-8")
         self._repair_prompt = (prompts / "json_repair_v1.txt").read_text(encoding="utf-8")
 
@@ -87,8 +87,10 @@ class QwenLLMAdapter:
 
         def parse(output: str) -> TranslationEvaluation:
             result = TranslationEvaluation.model_validate(self._parse_json(output))
+            if result.prompt_version != "translation-evaluation-v1.1":
+                raise ValueError("prompt version mismatch")
             validate_evaluation(result, source_text_tr, student_translation_en)
-            return result
+            return calibrate_evaluation(result, source_text_tr, student_translation_en)
 
         return self._generate_validated(prompt, parse)
 
