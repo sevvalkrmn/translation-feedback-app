@@ -1,0 +1,10 @@
+psycopg[binary]==3.2.3
+python-dotenv==1.2.3
+pydantic==2.12.3
+pytest==8.3.4
+
+# Gerçek Qwen adapter'ı açıldığında qwen38 ortamında zaten bulunan paketler kullanılacak:
+# torch==2.14.0+cu130
+# transformers==5.17.0
+# bitsandbytes==0.50.2
+# accelerate==1.15.0
