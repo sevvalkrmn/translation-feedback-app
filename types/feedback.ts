@@ -72,6 +72,8 @@ export interface XaiEvidenceItem {
   category: ErrorCategory;
   severity: Severity;
   decision_explanation: string;
+  source_meaning?: string | null;
+  detected_problem?: string | null;
   verification: XaiVerification;
   student_hint: string;
 }

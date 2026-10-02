@@ -84,6 +84,8 @@ class EvidenceItem(StrictModel):
     category: Category
     severity: Severity
     decision_explanation: str
+    source_meaning: str | None = None
+    detected_problem: str | None = None
     verification: Verification
     student_hint: str
 

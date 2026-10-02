@@ -12,6 +12,8 @@ import { getTaskBundle } from "@/lib/supabase/repository";
 import { canOpenTask } from "@/lib/workflow/rules";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function TaskPage({
   params

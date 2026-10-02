@@ -3,7 +3,8 @@ from pydantic import ValidationError
 
 from worker.services.feedback import (
     apply_minimal_change, counterfactual_feedback, exact_span_start,
-    important_errors, normal_feedback, validate_evaluation, verify_change,
+    important_errors, normal_feedback, normalize_model_text, sentence,
+    validate_evaluation, verify_change,
 )
 from worker.services.models import DimensionScores, EvaluationError, TranslationEvaluation
 
@@ -63,6 +64,26 @@ def test_priority_and_visible_limit():
     assert len(result.errors) <= 2
 
 
+def test_student_summary_only_counts_selected_errors():
+    third = error(id="error_3", category="omission", severity="minor", detected_problem="Gizli üçüncü hata")
+    three = evaluation([error(), error(id="error_2")]).model_copy(update={
+        "errors": [error(), error(id="error_2"), third],
+        "summary": "Gizli üçüncü hata var, kritik noktalar incelenmeli.",
+    })
+    result = normal_feedback(three)
+    assert len(result.errors) == 2
+    assert "üçüncü" not in result.summary
+    assert "kritik" not in result.summary
+    assert "iki ifade" in result.summary
+    assert "Gizli üçüncü hata" not in result.model_dump_json()
+
+
+def test_model_punctuation_normalization_and_empty_text():
+    assert normalize_model_text("  Geçici süreliğine...  ") == "Geçici süreliğine."
+    assert sentence("  Sorun giderilmeli.. ") == "Sorun giderilmeli."
+    assert sentence("  ") == ""
+
+
 def test_minimal_diff_rejects_ambiguous_or_wide_rewrite():
     assert apply_minimal_change(TRANSLATION, "cancel the project", "temporarily suspend the project") == (
         "The committee decided to temporarily suspend the project."
@@ -120,6 +141,10 @@ def test_xai_verified_without_candidate_leak(capsys):
     assert len([c for c in engine.calls if c[0] == "evaluate"]) == 2
     assert "temporarily suspend the project" not in result.model_dump_json()
     assert "temporarily suspend the project" not in capsys.readouterr().out
+    assert result.evidence_items[0].source_meaning == "geçici durdurma"
+    assert result.evidence_items[0].detected_problem == "kalıcı iptal."
+    assert "karar değişti" not in result.evidence_items[0].decision_explanation
+    assert "iki" not in result.summary
 
 
 def test_xai_inconclusive_fallback_and_two_attempt_limit():
@@ -127,6 +152,8 @@ def test_xai_inconclusive_fallback_and_two_attempt_limit():
     result = counterfactual_feedback(engine, SOURCE, TRANSLATION)
     assert result.evidence_items == []
     assert "doğrulanmış yüksek etkili" in result.summary
+    assert result.evaluation.errors == []
+    assert result.evaluation.summary == result.summary
     assert len([c for c in engine.calls if c[0] == "candidate"]) == 2
 
 

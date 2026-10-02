@@ -1,14 +1,16 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { FeedbackView } from "@/components/FeedbackView";
 import { LockedText } from "@/components/LockedText";
 import { PageHeader } from "@/components/PageHeader";
+import { ResultActions } from "@/components/ResultActions";
 import { requireSessionWithTasks } from "@/lib/session/access";
 import { getResultBundle } from "@/lib/supabase/repository";
 import { canOpenResult } from "@/lib/workflow/rules";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function ResultPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
@@ -17,6 +19,9 @@ export default async function ResultPage({ params }: { params: Promise<{ session
   if (!canOpenResult(tasks)) {
     const task1 = tasks.find((task) => task.task_number === 1);
     redirect(task1?.status === "revised" ? `/session/${sessionId}/task/2` : `/session/${sessionId}/task/1`);
+  }
+  if (session.status !== "completed") {
+    notFound();
   }
 
   const result = await getResultBundle({ sessionId, accessTokenHash });
@@ -32,14 +37,7 @@ export default async function ResultPage({ params }: { params: Promise<{ session
         backHref={`/session/${sessionId}/task/2`}
       />
 
-      <div className="mb-6 flex flex-wrap gap-3">
-        <Link
-          className="rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
-          href={`/session/${sessionId}/result/report`}
-        >
-          PDF indir
-        </Link>
-      </div>
+      <ResultActions sessionId={sessionId} />
 
       <section className="grid gap-8">
         <TaskResultBlock

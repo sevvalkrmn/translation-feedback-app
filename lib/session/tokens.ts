@@ -2,6 +2,19 @@ import crypto from "node:crypto";
 
 export const SESSION_COOKIE_NAME = "tf_session_token";
 
+export function sessionCookiePath(sessionId: string): string {
+  return `/session/${sessionId}`;
+}
+
+export function sessionCookieOptions(sessionId: string) {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+    path: sessionCookiePath(sessionId)
+  };
+}
+
 export function createAccessToken(): string {
   return crypto.randomBytes(32).toString("base64url");
 }

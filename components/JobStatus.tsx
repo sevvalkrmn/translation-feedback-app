@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { retryJobAction } from "@/app/actions";
@@ -16,32 +16,103 @@ export function JobStatus({
   initialJob: ModelJobStatus | null;
 }) {
   const router = useRouter();
+  const routerRef = useRef(router);
   const [status, setStatus] = useState(initialJob?.status ?? "queued");
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    if (status === "succeeded" || status === "failed") {
+    routerRef.current = router;
+  }, [router]);
+
+  useEffect(() => {
+    if (initialJob?.status === "failed") {
       return;
     }
 
-    const timer = window.setInterval(async () => {
-      const response = await fetch(`/api/session/${sessionId}/task/${taskNumber}/status`, {
-        cache: "no-store"
-      });
-      if (!response.ok) {
+    const taskPath = `/session/${sessionId}/task/${taskNumber}`;
+    const statusUrl = `/api/session/${sessionId}/task/${taskNumber}/status`;
+    const reloadKey = `feedback-reload:${sessionId}:${taskNumber}`;
+    let disposed = false;
+    let stopped = false;
+    let timer: number | undefined;
+    let active: AbortController | undefined;
+    let requestId = 0;
+    let refreshCount = 0;
+
+    function schedule(delay: number) {
+      window.clearTimeout(timer);
+      if (!disposed && !stopped) {
+        timer = window.setTimeout(check, delay);
+      }
+    }
+
+    function hardReloadOnce() {
+      try {
+        if (window.sessionStorage.getItem(reloadKey)) {
+          return false;
+        }
+        window.sessionStorage.setItem(reloadKey, "1");
+        stopped = true;
+        window.location.replace(taskPath);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function check() {
+      if (disposed || stopped) return;
+      if (document.visibilityState === "hidden") {
+        schedule(2500);
         return;
       }
-      const payload = (await response.json()) as { jobStatus?: JobStatusValue };
-      if (payload.jobStatus) {
-        setStatus(payload.jobStatus);
-      }
-      if (payload.jobStatus === "succeeded" || payload.jobStatus === "failed") {
-        router.refresh();
-      }
-    }, 2500);
+      active?.abort();
+      const controller = new AbortController();
+      active = controller;
+      const current = ++requestId;
+      try {
+        const response = await fetch(statusUrl, { cache: "no-store", signal: controller.signal });
+        if (disposed || current !== requestId) return;
+        if (response.status === 404) {
+          stopped = true;
+          window.location.replace(taskPath);
+          return;
+        }
+        if (!response.ok) return;
 
-    return () => window.clearInterval(timer);
-  }, [router, sessionId, status, taskNumber]);
+        const payload = (await response.json()) as { jobStatus?: JobStatusValue; hasFeedback?: boolean };
+        if (disposed || current !== requestId) return;
+        if (payload.jobStatus) setStatus(payload.jobStatus);
+        if (payload.jobStatus === "failed") {
+          stopped = true;
+        } else if (payload.jobStatus === "succeeded" && payload.hasFeedback) {
+          if (refreshCount >= 2 && hardReloadOnce()) return;
+          refreshCount += 1;
+          routerRef.current.refresh();
+        }
+      } catch {
+        // A transient network failure is checked again on the next tick.
+      } finally {
+        if (active === controller) active = undefined;
+        if (current === requestId) schedule(2500);
+      }
+    }
+
+    function onVisible() {
+      if (document.visibilityState !== "visible" || disposed || stopped) return;
+      window.clearTimeout(timer);
+      void check();
+    }
+
+    document.addEventListener("visibilitychange", onVisible);
+    schedule(initialJob?.status === "succeeded" ? 0 : 2500);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      active?.abort();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [sessionId, taskNumber, initialJob?.status]);
 
   if (status === "failed") {
     return (

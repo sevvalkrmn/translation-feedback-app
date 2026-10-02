@@ -12,6 +12,9 @@ export function getSupabaseServiceClient() {
   }
 
   return createClient<Database>(url, serviceKey, {
+    global: {
+      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" })
+    },
     auth: {
       persistSession: false,
       autoRefreshToken: false

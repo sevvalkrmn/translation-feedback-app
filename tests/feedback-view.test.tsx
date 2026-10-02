@@ -24,6 +24,7 @@ describe("student feedback", () => {
     ] });
     expect(html).toContain("Akıcılık");
     expect(html).toContain("Önemli");
+    expect(html).toContain("bir ifade belirlendi");
     expect(html).toContain("İpucu");
     expect(html).not.toContain("13");
   });
@@ -36,9 +37,56 @@ describe("student feedback", () => {
           relevant_dimension: "grammar_fluency", score_delta: 20, no_new_major_error: true } }
     ] });
     expect(html).toContain("Kaynak dayanak: zorlandı");
-    expect(html).toContain("Kontrollü değişiklikle doğrulandı");
+    expect(html).toContain("Kontrollü değişiklik testinde hata kararı ortadan kalktı.");
     expect(html).toContain("<mark");
     expect(html).not.toContain("with difficulty");
     expect(html).not.toContain(">20<");
+  });
+
+  it("does not render a hidden error from a legacy free-form summary", () => {
+    const html = render({ method: "llm", summary: "Üçüncü omission hatası da var.", evaluation, errors: [
+      { source_span: "zorlandı", translation_span: "hardly", category: "fluency", severity: "major",
+        explanation: "Doğal değil..", hint: "Eylemi düşün." }
+    ] });
+    expect(html).toContain("bir ifade belirlendi");
+    expect(html).not.toContain("Üçüncü omission");
+    expect(html).not.toContain("değil..");
+  });
+
+  it("shows separate XAI fields, normalized punctuation, and reduced severity", () => {
+    const html = render({ method: "xai", summary: "Kritik noktalar var.", evaluation: {
+      ...evaluation,
+      errors: [{ id: "error_1", source_span: "zorlandı", translation_span: "hardly",
+        category: "fluency", severity: "major", source_meaning: "Güçlükle..",
+        detected_problem: "Doğal ifade değil..", student_hint: "Yapıyı düşün." }]
+    }, evidence_items: [
+      { source_span: "zorlandı", translation_span: "hardly", category: "fluency", severity: "major",
+        decision_explanation: "Kaynakta ifade Güçlükle..", student_hint: "Yapıyı düşün..",
+        verification: { status: "verified", before_severity: "major", after_severity: "minor",
+          relevant_dimension: "grammar_fluency", score_delta: 2, no_new_major_error: true } }
+    ] });
+    expect(html).toContain("Kaynak anlam: Güçlükle.");
+    expect(html).toContain("Saptanan sorun: Doğal ifade değil.");
+    expect(html).toContain("hatanın önem düzeyi azaldı");
+    expect(html).not.toContain("Kritik noktalar");
+    expect(html).not.toContain("Güçlükle..");
+  });
+
+  it("escapes model-supplied HTML and hides internal evaluation fields", () => {
+    const html = render({ method: "xai", summary: "secret score 13", evaluation: {
+      ...evaluation,
+      errors: [{ id: "error_1", source_span: "zorlandı", translation_span: "hardly",
+        category: "fluency", severity: "major", source_meaning: "Güçlükle",
+        detected_problem: "<img src=x onerror=alert(1)>", student_hint: "Düşün." }]
+    }, evidence_items: [{ source_span: "zorlandı", translation_span: "hardly", category: "fluency", severity: "major",
+      decision_explanation: "Eski alan", student_hint: "Düşün.",
+      verification: { status: "inconclusive", before_severity: "major", after_severity: "major",
+        relevant_dimension: "grammar_fluency", score_delta: 13, no_new_major_error: false } }] });
+    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("secret score");
+    expect(html).not.toContain("score_delta");
+    expect(html).not.toContain("critical_evidence");
+    expect(html).toContain("yeterince doğrulayamadı");
   });
 });

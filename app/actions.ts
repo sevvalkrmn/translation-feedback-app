@@ -1,10 +1,10 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect, RedirectType } from "next/navigation";
 
 import { requireSessionAccess } from "@/lib/session/access";
-import { createAccessToken, hashAccessToken, SESSION_COOKIE_NAME } from "@/lib/session/tokens";
+import { createAccessToken, hashAccessToken, SESSION_COOKIE_NAME, sessionCookieOptions } from "@/lib/session/tokens";
 import {
   createStudentSessionRecord,
   retryFailedJob,
@@ -12,6 +12,8 @@ import {
   submitTaskRevision
 } from "@/lib/supabase/repository";
 import { initialTaskSchema, revisionSchema, studentNameSchema, taskNumberSchema } from "@/lib/validation/schemas";
+import { requireSessionWithTasks } from "@/lib/session/access";
+import { canOpenResult } from "@/lib/workflow/rules";
 
 function formValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
@@ -37,10 +39,7 @@ export async function startSessionAction(formData: FormData) {
 
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: `/session/${session.id}`,
+    ...sessionCookieOptions(session.id),
     maxAge: 60 * 60 * 8
   });
 
@@ -91,4 +90,19 @@ export async function retryJobAction(sessionId: string, taskNumberInput: number)
   const taskNumber = taskNumberSchema.parse(taskNumberInput);
   await retryFailedJob({ sessionId, accessTokenHash, taskNumber });
   redirect(`/session/${sessionId}/task/${taskNumber}`);
+}
+
+export async function finishSessionAction(sessionId: string) {
+  const { session, tasks } = await requireSessionWithTasks(sessionId);
+  if (session.status !== "completed" || !canOpenResult(tasks)) {
+    notFound();
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE_NAME, "", {
+    ...sessionCookieOptions(sessionId),
+    maxAge: 0,
+    expires: new Date(0)
+  });
+  redirect("/completed", RedirectType.replace);
 }

@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { Document, Font, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
+import { evidenceText, modelSentence, studentSummary, verificationText, visibleIssues } from "@/lib/feedback/presentation";
 import type { FeedbackRecord, ResultBundle, StructuredFeedback } from "@/types/feedback";
 
 Font.register({ family: "DejaVu", src: path.join(process.cwd(), "public/fonts/DejaVuSans.ttf") });
@@ -58,7 +59,7 @@ function FeedbackDetails({ title, record }: { title: string; record: FeedbackRec
     <View style={styles.section}>
       <Text style={styles.heading}>{title} - {feedback.method === "llm" ? "Normal LLM" : "Karşı-olgusal XAI"}</Text>
       <Text style={styles.label}>Öğrenciye gösterilen geri bildirim</Text>
-      <Text style={styles.paragraph}>{feedback.summary}</Text>
+      <Text style={styles.paragraph}>{studentSummary(feedback)}</Text>
       <FeedbackIssues feedback={feedback} />
       <Text style={styles.label}>Model / checkpoint</Text><Text>{record.model_name}</Text>
       <Text style={styles.label}>Prompt / şema sürümü</Text>
@@ -71,15 +72,20 @@ function FeedbackDetails({ title, record }: { title: string; record: FeedbackRec
 
 function FeedbackIssues({ feedback }: { feedback: StructuredFeedback }) {
   if (feedback.method === "llm") {
-    return <View>{feedback.errors.map((error, index) => (
+    return <View>{visibleIssues(feedback).map((error, index) => (
       <Text style={styles.listItem} key={index}>
-        {error.category} ({error.severity}) - {error.translation_span}: {error.explanation} İpucu: {error.hint}
+        {error.category} ({error.severity}) - {error.translation_span}: {modelSentence(error.explanation)} İpucu: {modelSentence(error.hint)}
       </Text>
     ))}</View>;
   }
-  return <View>{feedback.evidence_items.map((item, index) => (
-    <Text style={styles.listItem} key={index}>
-      {item.category} ({item.severity}, {item.verification.status}) - Kaynak: {item.source_span}; Çeviri: {item.translation_span}. {item.decision_explanation} İpucu: {item.student_hint}
-    </Text>
-  ))}</View>;
+  return <View>{visibleIssues(feedback).map((item, index) => {
+    const detail = evidenceText(feedback, item);
+    return <View key={index} style={styles.listItem}>
+      <Text>{item.category} ({item.severity}, {item.verification.status}) - Kaynak: {item.source_span}; Çeviri: {item.translation_span}</Text>
+      {detail.sourceMeaning && <Text>Kaynak anlam: {detail.sourceMeaning}</Text>}
+      {detail.problem && <Text>Saptanan sorun: {detail.problem}</Text>}
+      <Text>{verificationText(item)}</Text>
+      {modelSentence(item.student_hint) && <Text>İpucu: {modelSentence(item.student_hint)}</Text>}
+    </View>;
+  })}</View>;
 }

@@ -23,7 +23,7 @@ describe("PDF report", () => {
         session_id: crypto.randomUUID(),
         task_number: 1,
         method: "llm",
-        source_text: "Öğrenci çeviriyi dikkatle gözden geçirdi.",
+        source_text: "Öğrenci çeviriyi dikkatle gözden geçirdi. ğüşİıöç",
         initial_translation: "The student reviewed the translation.",
         revised_translation: "The student carefully reviewed the translation.",
         status: "revised",
@@ -73,12 +73,20 @@ describe("PDF report", () => {
         structured_output: {
           method: "xai",
           summary: "İfade gözden geçirilmeli.",
-          evidence_items: [],
+          evidence_items: [{
+            source_span: "zorlandı", translation_span: "hardly", category: "fluency", severity: "major",
+            decision_explanation: "Bozuk eski açıklama..", student_hint: "Yapıyı düşün..",
+            verification: { status: "verified", before_severity: "major", after_severity: null,
+              relevant_dimension: "grammar_fluency", score_delta: 5, no_new_major_error: true }
+          }],
           evaluation: {
             schema_version: "1.0", prompt_version: "translation-evaluation-v1",
             model: "Qwen3.8-27B", language_pair: "tr-en", overall_score: 70,
             dimension_scores: { meaning_accuracy: 70, completeness: 70, grammar_fluency: 70, terminology_register: 70 },
-            errors: [], summary: "İfade gözden geçirilmeli."
+            errors: [{ id: "error_1", source_span: "zorlandı", translation_span: "hardly",
+              category: "fluency", severity: "major", source_meaning: "Güçlükle..",
+              detected_problem: "Doğal değil..", student_hint: "Yapıyı düşün." }],
+            summary: "İfade gözden geçirilmeli."
           }
         }
       }
@@ -94,6 +102,14 @@ describe("PDF report", () => {
       expect(text).toContain("Bölüm B - Geri bildirim ayrıntıları");
       expect(text.indexOf("Bölüm A")).toBeLessThan(text.indexOf("Bölüm B"));
       expect(text).toContain("ğüşİıöç");
+      expect(text).not.toContain("Türkçe karakterler: ğüşİıöç");
+      expect(text).not.toContain("PDF Raporunu İndir");
+      expect(text).not.toContain("Çalışmayı Bitir");
+      expect(text).toContain("Kaynak anlam: Güçlükle.");
+      expect(text).toContain("Saptanan sorun: Doğal değil.");
+      expect(text).toContain("hata kararı ortadan kalktı");
+      expect(text).not.toContain("Bozuk eski açıklama");
+      expect(text).not.toContain("Doğal değil..");
     }
   });
 });

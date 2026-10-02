@@ -19,6 +19,22 @@ FALLBACK = (
 )
 
 
+def normalize_model_text(value: str) -> str:
+    return re.sub(r"([.!?])\1+$", r"\1", value.strip())
+
+
+def sentence(value: str) -> str:
+    normalized = normalize_model_text(value)
+    return normalized + ("" if not normalized or normalized.endswith((".", "!", "?")) else ".")
+
+
+def selected_summary(count: int) -> str:
+    if count == 0:
+        return "Bu çeviride gösterilecek belirgin bir sorun saptanmadı."
+    quantity = "bir" if count == 1 else "iki"
+    return f"Çeviride gözden geçirilmesi gereken {quantity} ifade belirlendi."
+
+
 class EvaluationEngine(Protocol):
     model_name: str
 
@@ -102,14 +118,16 @@ def important_errors(evaluation: TranslationEvaluation) -> list[EvaluationError]
 
 
 def normal_feedback(evaluation: TranslationEvaluation) -> LLMFeedbackResult:
+    selected = important_errors(evaluation)
+    summary = selected_summary(len(selected))
     return LLMFeedbackResult(
-        summary=evaluation.summary,
+        summary=summary,
         errors=[FeedbackIssue(
             source_span=error.source_span, translation_span=error.translation_span,
             category=error.category, severity=error.severity,
-            explanation=error.detected_problem, hint=error.student_hint,
-        ) for error in important_errors(evaluation)],
-        evaluation=evaluation,
+            explanation=sentence(error.detected_problem), hint=sentence(error.student_hint),
+        ) for error in selected],
+        evaluation=evaluation.model_copy(update={"summary": summary, "errors": selected}),
     )
 
 
@@ -189,22 +207,25 @@ def counterfactual_feedback(
                 verification = verify_change(before, after, error)
                 if verification.status == "verified":
                     break
-        description = (
-            f'Kaynakta "{error.source_span}" ifadesi {error.source_meaning}. '
-            f'Öğrenci çevirisindeki "{error.translation_span}" için saptanan sorun: {error.detected_problem}. '
-            + ("Kontrollü değişiklik testinde karar değişti." if verification.status == "verified"
-               else "Kontrollü değişiklik testinde karar yeterince kararlı biçimde doğrulanamadı.")
-        )
         evidence.append(EvidenceItem(
             source_span=error.source_span, translation_span=error.translation_span,
             category=error.category, severity=error.severity,
-            decision_explanation=description, verification=verification,
-            student_hint=error.student_hint,
+            decision_explanation=sentence(error.detected_problem),
+            source_meaning=normalize_model_text(error.source_meaning),
+            detected_problem=sentence(error.detected_problem),
+            verification=verification, student_hint=sentence(error.student_hint),
         ))
     verified = [item for item in evidence if item.verification.status == "verified"]
     inconclusive = [item for item in evidence if item.verification.status == "inconclusive"]
+    visible = (verified + inconclusive)[:2] if verified else []
+    summary = selected_summary(len(visible)) if verified else FALLBACK
+    visible_errors = [error for error in before.errors if any(
+        error.source_span == item.source_span
+        and error.translation_span == item.translation_span
+        and error.category == item.category for item in visible
+    )]
     return XAIResult(
-        summary=before.summary if verified else FALLBACK,
-        evidence_items=(verified + inconclusive)[:2] if verified else [],
-        evaluation=before,
+        summary=summary,
+        evidence_items=visible,
+        evaluation=before.model_copy(update={"summary": summary, "errors": visible_errors}),
     )
