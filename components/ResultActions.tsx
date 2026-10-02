@@ -34,16 +34,16 @@ export function ResultActions({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div className="mb-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+    <div className="mb-8 flex flex-col gap-3 border-b border-slate-200 pb-7 sm:flex-row sm:items-center">
       <Link
-        className="inline-flex min-h-11 max-w-full items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-center text-sm font-semibold text-white"
+        className="action-button action-button-primary w-full sm:w-auto"
         href={`/session/${sessionId}/result/report`}
         prefetch={false}
       >
         PDF Raporunu İndir
       </Link>
       <button
-        className="min-h-11 max-w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-900"
+        className="action-button action-button-secondary w-full sm:w-auto"
         onClick={openDialog}
         ref={openButtonRef}
         type="button"
@@ -68,7 +68,7 @@ export function ResultActions({ sessionId }: { sessionId: string }) {
         {error && <p className="mt-3 text-sm text-red-700" role="alert">İşlem tamamlanamadı. Lütfen tekrar deneyin.</p>}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button
-            className="min-h-11 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold"
+            className="action-button action-button-secondary"
             disabled={pending}
             onClick={() => dialogRef.current?.close()}
             ref={cancelButtonRef}
@@ -77,7 +77,8 @@ export function ResultActions({ sessionId }: { sessionId: string }) {
             Vazgeç
           </button>
           <button
-            className="min-h-11 rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            aria-busy={pending}
+            className="action-button action-button-primary"
             disabled={pending}
             onClick={() => void confirmFinish()}
             type="button"

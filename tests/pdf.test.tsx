@@ -1,9 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { renderToBuffer } from "@react-pdf/renderer";
-import React from "react";
 import { describe, expect, it } from "vitest";
 
-import { ReportDocument } from "@/lib/report/ReportDocument";
+import { renderReport } from "@/lib/report/render";
 import type { ResultBundle } from "@/types/feedback";
 
 describe("PDF report", () => {
@@ -92,7 +90,22 @@ describe("PDF report", () => {
       }
     };
 
-    const buffer = await renderToBuffer(React.createElement(ReportDocument, { data }) as never);
+    const longText = Array.from({ length: 30 }, (_, index) => `Uzun metin bölümü ${index + 1}.`).join(" ");
+    const longData = {
+      ...data,
+      task1: { ...data.task1, source_text: `${longText} SON_KAYNAK`, initial_translation: `${longText} SON_ILK`, revised_translation: `${longText} SON_REVIZE` }
+    } satisfies ResultBundle;
+    const longBuffer = await renderReport(longData);
+    const longExtraction = spawnSync("pdftotext", ["-", "-"], { input: longBuffer });
+    if (!longExtraction.error) {
+      const longOutput = longExtraction.stdout.toString("utf8");
+      expect(longOutput).toContain("SON_KAYNAK");
+      expect(longOutput).toContain("SON_ILK");
+      expect(longOutput).toContain("SON_REVIZE");
+      expect(longOutput.indexOf("Bölüm A")).toBeLessThan(longOutput.indexOf("Bölüm B"));
+    }
+
+    const buffer = await renderReport(data);
     expect(buffer.byteLength).toBeGreaterThan(1000);
     const extraction = spawnSync("pdftotext", ["-", "-"], { input: buffer });
     if (!extraction.error) {
@@ -105,11 +118,22 @@ describe("PDF report", () => {
       expect(text).not.toContain("Türkçe karakterler: ğüşİıöç");
       expect(text).not.toContain("PDF Raporunu İndir");
       expect(text).not.toContain("Çalışmayı Bitir");
-      expect(text).toContain("Kaynak anlam: Güçlükle.");
-      expect(text).toContain("Saptanan sorun: Doğal değil.");
+      expect(text).toMatch(/Kaynak anlam\s+Güçlükle\./u);
+      expect(text).toMatch(/Saptanan sorun\s+Doğal değil\./u);
       expect(text).toContain("hata kararı ortadan kalktı");
       expect(text).not.toContain("Bozuk eski açıklama");
       expect(text).not.toContain("Doğal değil..");
+      expect(text).toContain("İlk metin");
+      expect(text).toContain("İkinci metin");
+      expect(text).toContain("Revize İngilizce çeviri");
+      expect(text).toContain("Prompt / şema sürümü");
+      expect(text).not.toContain("Bitiriliyor");
     }
+
+    const repeatedBuffer = await renderReport(longData);
+    const repeatedOutput = spawnSync("pdftotext", ["-", "-"], { input: repeatedBuffer });
+    if (!repeatedOutput.error) expect(repeatedOutput.stdout.toString("utf8")).toContain("SON_KAYNAK");
+
+
   });
 });

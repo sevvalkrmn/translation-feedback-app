@@ -1,8 +1,6 @@
-import { renderToBuffer } from "@react-pdf/renderer";
 import { notFound, redirect } from "next/navigation";
-import React from "react";
 
-import { ReportDocument } from "@/lib/report/ReportDocument";
+import { renderReport } from "@/lib/report/render";
 import { requireSessionWithTasks } from "@/lib/session/access";
 import { getResultBundle } from "@/lib/supabase/repository";
 import { canOpenResult } from "@/lib/workflow/rules";
@@ -24,7 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ses
     notFound();
   }
 
-  const pdfBuffer = await renderToBuffer(React.createElement(ReportDocument, { data: result }) as never);
+  const pdfBuffer = await renderReport(result);
   return new Response(new Uint8Array(pdfBuffer), {
     headers: {
       "Content-Type": "application/pdf",

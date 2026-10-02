@@ -25,7 +25,7 @@ describe("student feedback", () => {
     expect(html).toContain("Akıcılık");
     expect(html).toContain("Önemli");
     expect(html).toContain("bir ifade belirlendi");
-    expect(html).toContain("İpucu");
+    expect(html).toContain("Revizyon ipucu:");
     expect(html).not.toContain("13");
   });
 
@@ -36,7 +36,7 @@ describe("student feedback", () => {
         verification: { status: "verified", before_severity: "major", after_severity: null,
           relevant_dimension: "grammar_fluency", score_delta: 20, no_new_major_error: true } }
     ] });
-    expect(html).toContain("Kaynak dayanak: zorlandı");
+    expect(html).toContain("<strong>Kaynak dayanak:</strong> zorlandı");
     expect(html).toContain("Kontrollü değişiklik testinde hata kararı ortadan kalktı.");
     expect(html).toContain("<mark");
     expect(html).not.toContain("with difficulty");
@@ -65,8 +65,8 @@ describe("student feedback", () => {
         verification: { status: "verified", before_severity: "major", after_severity: "minor",
           relevant_dimension: "grammar_fluency", score_delta: 2, no_new_major_error: true } }
     ] });
-    expect(html).toContain("Kaynak anlam: Güçlükle.");
-    expect(html).toContain("Saptanan sorun: Doğal ifade değil.");
+    expect(html).toContain("<strong>Kaynak anlam:</strong> Güçlükle.");
+    expect(html).toContain("<strong>Saptanan sorun:</strong> Doğal ifade değil.");
     expect(html).toContain("hatanın önem düzeyi azaldı");
     expect(html).not.toContain("Kritik noktalar");
     expect(html).not.toContain("Güçlükle..");

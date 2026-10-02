@@ -116,30 +116,39 @@ export function JobStatus({
 
   if (status === "failed") {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-5">
-        <h2 className="font-semibold text-red-950">Geri bildirim oluşturulamadı</h2>
-        <p className="mt-2 text-sm text-red-900">
-          Teknik bir hata oluştu. Geri bildirim işini güvenli biçimde yeniden deneyebilirsiniz.
+      <section className="border-l-4 border-red-600 bg-red-50 px-5 py-6" aria-labelledby="feedback-error-heading">
+        <h2 className="text-lg font-semibold text-red-950" id="feedback-error-heading">Geri bildirim hazırlanamadı</h2>
+        <p className="mt-2 text-sm leading-6 text-red-900">
+          Çeviriniz kaydedildi. Geri bildirimi yeniden hazırlamayı deneyebilirsiniz.
         </p>
         <button
-          className="mt-4 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white"
+          aria-busy={isPending}
+          className="action-button action-button-secondary mt-4"
           disabled={isPending}
           onClick={() => startTransition(() => retryJobAction(sessionId, taskNumber))}
           type="button"
         >
-          Tekrar dene
+          {isPending ? "Yeniden deneniyor..." : "Geri Bildirimi Yeniden Dene"}
         </button>
-      </div>
+      </section>
     );
   }
 
+  const heading = status === "queued" ? "Çeviriniz sırada"
+    : status === "succeeded" ? "Geri bildiriminiz hazır" : "Çeviriniz inceleniyor";
+  const message = status === "queued"
+    ? "Geri bildiriminiz hazırlanmak üzere. Bu ekranda kalabilirsiniz."
+    : status === "succeeded"
+      ? "Geri bildirim ekranı açılıyor."
+      : "Çeviriniz inceleniyor. Sonuç hazır olduğunda bu ekran otomatik güncellenecek.";
+
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
-      <h2 className="font-semibold text-amber-950">Geri bildirim hazırlanıyor</h2>
-      <p className="mt-2 text-sm text-amber-900">
-        İş sıraya alındı veya worker tarafından işleniyor. Bu sayfa sonucu otomatik kontrol eder.
-      </p>
-      <p className="mt-3 text-xs uppercase tracking-wide text-amber-800">Durum: {status}</p>
-    </div>
+    <section className="flex items-start gap-4 border-l-4 border-amber-500 bg-amber-50 px-5 py-6" aria-labelledby="feedback-status-heading">
+      <span aria-hidden="true" className="loading-ring mt-1 shrink-0" />
+      <div role="status" aria-live="polite" aria-atomic="true">
+        <h2 className="text-lg font-semibold text-slate-950" id="feedback-status-heading">{heading}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-700">{message}</p>
+      </div>
+    </section>
   );
 }

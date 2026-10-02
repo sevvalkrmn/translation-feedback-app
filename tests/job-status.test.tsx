@@ -82,7 +82,7 @@ describe("job status polling", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(firstSignal.aborted).toBe(true);
     await act(async () => { resolveOld(statusResponse("failed")); });
-    expect(screen.queryByText("Geri bildirim oluşturulamadı")).toBeNull();
+    expect(screen.queryByText("Geri bildirim hazırlanamadı")).toBeNull();
     expect(vi.getTimerCount()).toBe(1);
   });
 
@@ -90,7 +90,17 @@ describe("job status polling", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(statusResponse("failed")));
     render(<JobStatus sessionId="session-1" taskNumber={1} initialJob={{ status: "processing" }} />);
     await tick();
-    expect(screen.getByText("Geri bildirim oluşturulamadı")).toBeTruthy();
+    expect(screen.getByText("Geri bildirim hazırlanamadı")).toBeTruthy();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("explains queued and processing states without technical terms or repeated spinner announcements", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(statusResponse("processing")));
+    render(<JobStatus sessionId="session-1" taskNumber={1} initialJob={{ status: "queued" }} />);
+    expect(screen.getByText("Çeviriniz sırada")).toBeTruthy();
+    expect(document.querySelector(".loading-ring")?.getAttribute("aria-hidden")).toBe("true");
+    await tick();
+    expect(screen.getByText("Çeviriniz inceleniyor. Sonuç hazır olduğunda bu ekran otomatik güncellenecek.")).toBeTruthy();
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
   });
 });

@@ -5,8 +5,7 @@ const { requireSession, getResult, renderPdf } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/session/access", () => ({ requireSessionWithTasks: requireSession }));
 vi.mock("@/lib/supabase/repository", () => ({ getResultBundle: getResult }));
-vi.mock("@react-pdf/renderer", () => ({ renderToBuffer: renderPdf }));
-vi.mock("@/lib/report/ReportDocument", () => ({ ReportDocument: () => null }));
+vi.mock("@/lib/report/render", () => ({ renderReport: renderPdf }));
 
 import { GET } from "@/app/session/[sessionId]/result/report/route";
 
